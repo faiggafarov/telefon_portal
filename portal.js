@@ -17,6 +17,114 @@ let orgSelectedDeptId = null;
 let orgSearchQuery = '';
 let orgExpandedSectors = new Set();
 
+function formatCarPlate(plate) {
+  if (!plate) return '';
+  let s = String(plate).trim().toUpperCase();
+  if (!s) return '';
+  const clean = s.replace(/[^A-Z0-9]/g, '');
+  const match = clean.match(/^(\d{2})([A-Z]{2})(\d{3})$/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  return s.replace(/\s+/g, ' ').trim();
+}
+window.formatCarPlate = formatCarPlate;
+
+// Axtarış üçün mətn təmizləyici (tire, boşluq, nöqtə və s. işarələri görməzdən gəlmək üçün)
+function normalizeForSearch(str) {
+  if (!str) return '';
+  return String(str)
+    .toLocaleUpperCase('az')
+    .replace(/[\s\-_+().,\/\\]/g, '');
+}
+
+function matchesSearch(fieldValue, query) {
+  if (!fieldValue || !query) return false;
+  const fStr = String(fieldValue).toLocaleUpperCase('az');
+  const qStr = String(query).toLocaleUpperCase('az').trim();
+  if (!qStr) return true;
+
+  // 1. Birbaşa alt-sətir axtarışı
+  if (fStr.includes(qStr)) return true;
+
+  // 2. Tire, boşluq və simvolları təmizləyərək axtarış (məs: "10ab123" -> "10-AB-123")
+  const fClean = normalizeForSearch(fStr);
+  const qClean = normalizeForSearch(qStr);
+  if (qClean && fClean.includes(qClean)) return true;
+
+  // 3. Telefon nömrələri üçün xüsusi rəqəm axtarışı (məs: "0502439132" -> "+994 50-243-91-32")
+  const qDigits = qStr.replace(/\D/g, '');
+  if (qDigits && qDigits.length >= 3) {
+    const fDigits = fStr.replace(/\D/g, '');
+    if (fDigits.includes(qDigits)) return true;
+    if (qDigits.startsWith('0') && fDigits.includes(qDigits.slice(1))) return true;
+    if (qDigits.startsWith('994') && fDigits.includes(qDigits.slice(3))) return true;
+    if (fDigits.startsWith('994') && fDigits.slice(3).includes(qDigits)) return true;
+  }
+
+  return false;
+}
+
+function formatMobileNumber(phone) {
+  if (!phone) return '';
+  const s = String(phone).trim();
+  if (!s) return '';
+
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return s;
+
+  let localDigits = '';
+  if (digits.startsWith('994') && digits.length >= 12) {
+    localDigits = digits.slice(3, 12);
+  } else if (digits.startsWith('0') && digits.length === 10) {
+    localDigits = digits.slice(1, 10);
+  } else if (digits.length === 9) {
+    localDigits = digits;
+  } else if (digits.length > 9) {
+    localDigits = digits.slice(-9);
+  }
+
+  if (localDigits.length === 9) {
+    const op = localDigits.slice(0, 2);
+    const p1 = localDigits.slice(2, 5);
+    const p2 = localDigits.slice(5, 7);
+    const p3 = localDigits.slice(7, 9);
+    return `+994 ${op}-${p1}-${p2}-${p3}`;
+  }
+
+  if (s.startsWith('+994')) {
+    return s.replace(/^\+994\s*/, '+994 ');
+  }
+  return s;
+}
+window.formatMobileNumber = formatMobileNumber;
+
+function formatMobilePhone(input) {
+  let val = input.value.replace(/\D/g, '');
+  if (val.startsWith('994') && val.length > 3) {
+    val = val.slice(3);
+  } else if (val.startsWith('0') && val.length > 1) {
+    val = val.slice(1);
+  }
+  val = val.slice(0, 9);
+
+  let formatted = '';
+  if (val.length > 0) {
+    formatted = val.slice(0, 2);
+  }
+  if (val.length > 2) {
+    formatted += '-' + val.slice(2, 5);
+  }
+  if (val.length > 5) {
+    formatted += '-' + val.slice(5, 7);
+  }
+  if (val.length > 7) {
+    formatted += '-' + val.slice(7, 9);
+  }
+  input.value = formatted;
+}
+window.formatMobilePhone = formatMobilePhone;
+
 document.addEventListener('DOMContentLoaded', async () => {
   const initStr = portalUserName.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
   document.getElementById('sidebarAvatar').textContent = initStr;
@@ -30,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('addBtn').style.display = 'inline-flex';
     const adminBtn = document.getElementById('adminLoginBtn');
     if (adminBtn) adminBtn.style.display = 'none';
-    
+
     // Hide name, role and avatar so only the logout button is visible inside userCard
     const avatar = document.getElementById('sidebarAvatar');
     if (avatar) avatar.style.display = 'none';
@@ -48,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     const logoutBtn = document.querySelector('.logout-btn');
     if (logoutBtn) logoutBtn.style.display = 'none';
-    
+
     const userCard = document.getElementById('userCard');
     if (userCard) userCard.style.display = 'none';
   }
@@ -130,6 +238,24 @@ async function promptAdminLogin() {
 }
 
 /* ─── DATA & API ─── */
+
+// API sorğusu üçün retry köməkçisi (DB-yə bağlantı gecikəndə 1 dəfə təkrar cəhd edir)
+async function apiRequest(url, options = {}, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, { headers: HEADERS, ...options });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res;
+    } catch (err) {
+      if (attempt < retries) {
+        // Qısa gözləmə — sonra təkrar cəhd
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        throw err; // Bütün cəhdlər bitdi, xətanı yuxarı ötür
+      }
+    }
+  }
+}
 const DEPT_GRADIENTS = [
   'linear-gradient(135deg, #1E293B, #334155)', // Corporate Slate
   'linear-gradient(135deg, #0F172A, #1E293B)', // Navy Dark
@@ -166,26 +292,45 @@ window.formatMobilePhone = function (input) {
 // Fetch all domain lists
 async function fetchDomains() {
   try {
-    const res = await fetch(`${API_URL}/domains`, { headers: HEADERS });
-    if (!res.ok) throw new Error('API Error');
+    const res = await apiRequest(`${API_URL}/domains`);
     domains = await res.json() || { departments: [], sectors: [], positions: [] };
     populateFormDomains();
   } catch (err) {
-    showToast('Domain məlumatları yüklənərkən xəta baş verdi');
-    console.error(err);
+    showToast('Şöbə məlumatları yüklənərkən xəta baş verdi', 'error');
+    console.error('fetchDomains error:', err);
   }
 }
 
+window.copyToClipboard = function (text, event, label = 'Email') {
+  if (event) event.stopPropagation();
+  if (!text || text === 'null') return;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(`${label} kopyalandı!`);
+  }).catch(() => {
+    // Fallback
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      showToast(`${label} kopyalandı!`);
+    } catch (e) {
+      showToast('Kopyalama uğursuz oldu', 'error');
+    }
+    document.body.removeChild(textarea);
+  });
+};
+
 async function fetchEmployees() {
   try {
-    window.setPage = setPage; window.openView = openView; window.openEdit = openEdit; window.deleteEmp = deleteEmp; window.filterEmployees = filterEmployees; window.logout = logout; window.openAddModal = openAddModal; window.closeModal = closeModal; window.saveDirectPassword = saveDirectPassword; window.openDirectPassModal = openDirectPassModal; window.approveEditRequest = approveEditRequest; window.rejectEditRequest = rejectEditRequest; window.saveEmployee = saveEmployee; window.showToast = showToast; window.toggleSearchFieldDD = toggleSearchFieldDD; window.setSearchField = setSearchField; window.approveNewEmployeeRequest = approveNewEmployeeRequest; window.renderUsersTable = renderUsersTable;
-    const res = await fetch(`${API_URL}/employees`, { headers: HEADERS });
-    if (!res.ok) throw new Error('API Error');
+    window.setPage = setPage; window.openView = openView; window.openEdit = openEdit; window.deleteEmp = deleteEmp; window.filterEmployees = filterEmployees; window.logout = logout; window.openAddModal = openAddModal; window.closeModal = closeModal; window.saveDirectPassword = saveDirectPassword; window.openDirectPassModal = openDirectPassModal; window.approveEditRequest = approveEditRequest; window.rejectEditRequest = rejectEditRequest; window.saveEmployee = saveEmployee; window.showToast = showToast; window.toggleSearchFieldDD = toggleSearchFieldDD; window.setSearchField = setSearchField; window.approveNewEmployeeRequest = approveNewEmployeeRequest; window.renderUsersTable = renderUsersTable; window.copyToClipboard = copyToClipboard;
+    const res = await apiRequest(`${API_URL}/employees`);
     employees = await res.json() || [];
     render();
   } catch (err) {
-    showToast('Məlumatlar yüklənərkən xəta baş verdi');
-    console.error(err);
+    showToast('Əməkdaş məlumatları yüklənərkən xəta baş verdi. Səhifəni yeniləyin.', 'error');
+    console.error('fetchEmployees error:', err);
   }
 }
 
@@ -265,10 +410,10 @@ function populateFormCS(csId, options, placeholder, withSearch = false) {
 window.filterFormCSOptions = function (csId, query) {
   const optsEl = document.getElementById(csId + '-opts');
   if (!optsEl) return;
-  const q = query.toLocaleUpperCase('az');
+  const q = (query || '').trim();
   optsEl.querySelectorAll('.form-cs-option:not(.empty-opt)').forEach(opt => {
-    const text = (opt.dataset.text || '').toLocaleUpperCase('az');
-    opt.style.display = text.includes(q) ? '' : 'none';
+    const text = opt.dataset.text || '';
+    opt.style.display = matchesSearch(text, q) ? '' : 'none';
   });
 };
 
@@ -415,7 +560,7 @@ function updateFilters() {
 
 function getFiltered() {
   const raw = document.getElementById('searchInput').value;
-  const q = raw.toLocaleUpperCase('az');
+  const q = raw ? raw.trim() : '';
   const d = document.getElementById('deptFilter').value;
   const s = document.getElementById('secFilter') ? document.getElementById('secFilter').value : '';
   const p = document.getElementById('posFilter').value;
@@ -423,14 +568,13 @@ function getFiltered() {
     let ok = true;
     if (q) {
       if (searchField === 'all') {
-        ok = [e.name, e.email, e.dept_name, e.sector_name, e.position_name, e.room, e.car_plate, e.intphone, e.mobile].some(f => f && f.toLocaleUpperCase('az').includes(q));
+        ok = [e.name, e.email, e.dept_name, e.sector_name, e.position_name, e.room, e.car_plate, e.intphone, e.mobile].some(f => matchesSearch(f, q));
       } else {
         let key = searchField;
         if (key === 'dept') key = 'dept_name';
         if (key === 'sektor') key = 'sector_name';
         if (key === 'position') key = 'position_name';
-        const val = e[key];
-        ok = val ? val.toLocaleUpperCase('az').includes(q) : false;
+        ok = matchesSearch(e[key], q);
       }
     }
     return ok && (!d || String(e.dept_id) === String(d)) && (!s || String(e.sector_id) === String(s)) && (!p || String(e.position_id) === String(p));
@@ -469,20 +613,20 @@ function renderCards(list) {
       <div class="card-banner" style="background:${bg}"></div>
       <div class="card-top">
         <div class="emp-avatar" style="background:${bg}">${initials(e.name)}</div>
-        <div>
+        <div style="min-width: 0; flex: 1;">
           <div class="emp-name">${e.name}</div>
           <div class="emp-pos">${e.position_name || '—'}</div>
-          <span class="dept-chip">Şöbə: ${e.dept_name || '—'}</span>
-          ${e.sector_name ? `<span class="dept-chip" style="background:rgba(16,185,129,0.1); color:var(--success); margin-left:4px">Sektor: ${e.sector_name}</span>` : ''}
+          <span class="dept-chip" title="Şöbə: ${e.dept_name || '—'}">Şöbə: ${e.dept_name || '—'}</span>
+          ${e.sector_name ? `<span class="dept-chip" title="Sektor: ${e.sector_name}" style="background:rgba(16,185,129,0.1); color:var(--success); margin-left:4px">Sektor: ${e.sector_name}</span>` : ''}
         </div>
       </div>
       <div class="card-body">
-        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><a href="mailto:${e.email}" onclick="event.stopPropagation()">${e.email}</a></div>
-        ${e.intphone ? `<div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg><span>Daxili: <strong>${e.intphone}</strong></span></div>` : ''}
-        ${e.mobile ? `<div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><span>Mobil: <a href="tel:${e.mobile}" onclick="event.stopPropagation()"><strong>${e.mobile}</strong></a></span></div>` : ''}
+        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><span>Email: ${e.email && e.email !== 'null' ? `<span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;font-weight:600;color:var(--text-main);">${e.email}</span>` : '<strong>-</strong>'}</span></div>
+        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg><span>Daxili: <strong>${e.intphone || '-'}</strong></span></div>
+        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><span>Mobil: <strong>${e.mobile || '-'}</strong></span></div>
       </div>
       <div class="card-footer">
-        ${e.room ? `<span class="room-chip"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Otaq ${e.room}</span>` : '<span></span>'}
+        <span class="room-chip"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>Otaq ${e.room || '-'}</span>
         <div class="card-acts">
           ${portalUserRole === 'admin' ? `
           <button class="act-btn" title="Redəktə" onclick="event.stopPropagation();openEdit(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
@@ -504,7 +648,7 @@ function renderTable(list) {
     <td>${e.position_name || '—'}</td>
     <td><span class="dept-chip" style="margin:0">${e.dept_name || '—'}</span></td>
     <td>${e.sector_name || '—'}</td>
-    <td><a href="mailto:${e.email}" style="color:#4F46E5;text-decoration:none;font-weight:600">${e.email}</a></td>
+    <td>${e.email && e.email !== 'null' ? `<span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;color:#4F46E5;font-weight:600">${e.email}</span>` : '—'}</td>
     <td>${e.intphone || '—'}</td>
     <td>${e.mobile || '—'}</td>
     <td>${e.room || '—'}</td>
@@ -555,7 +699,6 @@ function renderOrgPerson(emp, role, deptGradient) {
       <span class="org-person-badge">${ORG_ROLE_LABELS[role]}</span>
       
       <div class="org-person-name">${emp.name}</div>
-      <div class="org-person-title">${emp.position_name || ORG_ROLE_LABELS[role]}</div>
     </div>`;
 }
 
@@ -563,11 +706,16 @@ function renderOrgStaffList(staffList, deptGradient, label) {
   if (!staffList.length) return '';
   return `
     <div class="org-staff-section">
-      <div class="org-staff-label">${label} <span>${staffList.length}</span></div>
+      <button type="button" class="org-staff-label" onclick="toggleOrgStaff(this, event)" title="Siyahını aç / bağla">
+        <span class="org-staff-chevron">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="13" height="13"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+        </span>
+        <span class="org-staff-title">${label}</span>
+        <span class="org-staff-count">${staffList.length} nəfər</span>
+      </button>
       <div class="org-staff-list">
         ${staffList.map(emp => `
           <div class="org-staff-row" onclick="openView(${emp.id})" title="Profilə bax">
-            
             <span class="org-staff-row-name">${emp.name}</span>
             <span class="org-staff-row-pos">${emp.position_name || 'Əməkdaş'}</span>
           </div>
@@ -655,12 +803,12 @@ function renderOrgDeptPanel(dept, isActive) {
 }
 
 function getFilteredOrgDepts() {
-  const q = orgSearchQuery.toLocaleUpperCase('az').trim();
+  const q = orgSearchQuery.trim();
   if (!q) return domains.departments;
   return domains.departments.filter(dept => {
-    if (dept.name.toLocaleUpperCase('az').includes(q)) return true;
+    if (matchesSearch(dept.name, q)) return true;
     const deptSectors = domains.sectors.filter(s => String(s.dept_id) === String(dept.id));
-    return deptSectors.some(s => s.name.toLocaleUpperCase('az').includes(q));
+    return deptSectors.some(s => matchesSearch(s.name, q));
   });
 }
 
@@ -680,6 +828,17 @@ window.selectOrgDept = function (deptId) {
   if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+window.toggleOrgStaff = function (btn, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const section = btn.closest('.org-staff-section');
+  if (section) {
+    section.classList.toggle('open');
+  }
+};
+
 window.toggleOrgSector = function (sectorKey, event) {
   event.stopPropagation();
   if (orgExpandedSectors.has(sectorKey)) orgExpandedSectors.delete(sectorKey);
@@ -694,11 +853,17 @@ window.orgExpandAllSectors = function () {
     if (key) orgExpandedSectors.add(key);
     el.classList.add('open');
   });
+  document.querySelectorAll('.org-staff-section').forEach(el => {
+    el.classList.add('open');
+  });
 };
 
 window.orgCollapseAllSectors = function () {
   orgExpandedSectors.clear();
   document.querySelectorAll('.org-sector-block').forEach(el => {
+    el.classList.remove('open');
+  });
+  document.querySelectorAll('.org-staff-section').forEach(el => {
     el.classList.remove('open');
   });
 };
@@ -892,11 +1057,11 @@ function openView(id) {
     </div>
     <div class="info-section">
       <div class="info-section-title">Əlaqə Məlumatları</div>
-      <div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><div><div class="info-item-label">Email</div><div class="info-item-value">${e.email}</div></div></div>
+      ${e.email && e.email !== 'null' ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><div><div class="info-item-label">Email</div><div class="info-item-value"><span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;color:var(--accent);font-weight:600">${e.email}</span></div></div></div>` : ''}
       ${e.intphone ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg><div><div class="info-item-label">Daxili Tel.</div><div class="info-item-value">${e.intphone}</div></div></div>` : ''}
       ${e.mobile ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><div><div class="info-item-label">Mobil</div><div class="info-item-value">${e.mobile}</div></div></div>` : ''}
-      ${e.room ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg><div><div class="info-item-label">Otaq Nömrəsi</div><div class="info-item-value">Otaq ${e.room}</div></div></div>` : ''}
-      ${e.car_plate ? `<div class="info-item"><svg viewBox="0 0 24 24" fill="currentColor" style="opacity:0.75"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg><div><div class="info-item-label">Maşın Nömrəsi</div><div class="info-item-value">${e.car_plate}</div></div></div>` : ''}
+      ${e.room ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg><div><div class="info-item-label">Otaq Nömrəsi</div><div class="info-item-value">${e.room}</div></div></div>` : ''}
+      ${e.car_plate ? `<div class="info-item"><svg viewBox="0 0 24 24" fill="currentColor" style="opacity:0.75"><path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg><div><div class="info-item-label">Maşın Nömrəsi</div><div class="info-item-value">${formatCarPlate(e.car_plate)}</div></div></div>` : ''}
     </div>
     <div style="display:flex;gap:10px;margin-top:8px">
       ${portalUserRole === 'admin' ? `
@@ -1004,7 +1169,20 @@ function openEdit(id) {
   document.getElementById('fRoom').value = e.room || '';
   document.getElementById('fEmail').value = e.email || '';
   document.getElementById('fIntPhone').value = e.intphone || '';
-  document.getElementById('fMobile').value = (e.mobile || '').replace(/^\+994\s*/, '');
+  
+  const mDigits = (e.mobile || '').replace(/\D/g, '');
+  let localM = '';
+  if (mDigits.startsWith('994') && mDigits.length >= 11) localM = mDigits.slice(3, 12);
+  else if (mDigits.startsWith('0') && mDigits.length === 10) localM = mDigits.slice(1, 10);
+  else if (mDigits.length === 9) localM = mDigits;
+  else localM = (e.mobile || '').replace(/^\+994\s*/, '');
+
+  if (localM.length === 9) {
+    document.getElementById('fMobile').value = `${localM.slice(0, 2)}-${localM.slice(2, 5)}-${localM.slice(5, 7)}-${localM.slice(7, 9)}`;
+  } else {
+    document.getElementById('fMobile').value = localM;
+  }
+
   const fCarPlate = document.getElementById('fCarPlate'); if (fCarPlate) fCarPlate.value = e.car_plate || '';
 
   document.getElementById('formModal').classList.add('open');
@@ -1096,15 +1274,15 @@ async function saveEmployee() {
   const email = document.getElementById('fEmail').value.trim();
   const intPhone = document.getElementById('fIntPhone').value.trim();
   const mobileRaw = document.getElementById('fMobile').value.trim();
-  const mobile = mobileRaw ? '+994 ' + mobileRaw : '';
+  const mobile = mobileRaw ? formatMobileNumber(mobileRaw) : null;
   const room = document.getElementById('fRoom').value.trim();
   const fCarPlate = document.getElementById('fCarPlate');
-  const car_plate = fCarPlate ? fCarPlate.value.trim() : '';
+  const car_plate = fCarPlate ? formatCarPlate(fCarPlate.value.trim()) : '';
 
   const enableBtn = () => { if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = ''; } };
 
   if (!name || !position_id) {
-    showToast('Ad Soyad və Vəzifə məcburidir!');
+    showToast('Ad Soyad və Vəzifə məcburidir!', 'error');
     enableBtn();
     return;
   }
@@ -1150,7 +1328,7 @@ async function saveEmployee() {
       render();
     }
   } catch (err) {
-    showToast(err.message || 'Yadda saxlayarkən xəta baş verdi');
+    showToast(err.message || 'Yadda saxlayarkən xəta baş verdi', 'error');
     console.error(err);
     await fetchEmployees();
   } finally {
@@ -1179,7 +1357,7 @@ async function saveEditRequest(newData) {
     editRequestMode = false;
     editRequestOriginalData = null;
   } catch (err) {
-    showToast('Sorğu göndərilərkən xəta baş verdi');
+    showToast('Sorğu göndərilərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1204,7 +1382,7 @@ async function saveNewEmployeeRequest(data) {
     closeModal('formModal');
     await fetchPendingRequestsCount();
   } catch (err) {
-    showToast('Sorğu göndərilərkən xəta baş verdi');
+    showToast('Sorğu göndərilərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1218,7 +1396,7 @@ async function deleteEmp(id) {
     showToast('Əməkdaş silindi');
     render();
   } catch (err) {
-    showToast('Silinərkən xəta baş verdi');
+    showToast('Silinərkən xəta baş verdi', 'error');
     console.error(err);
     await fetchEmployees();
   }
@@ -1231,7 +1409,7 @@ function showToast(msg, type = 'success') {
   if (!t) return;
   const msgEl = document.getElementById('toastMsg');
   const dotEl = t.querySelector('.toast-dot');
-  
+
   if (msgEl) msgEl.textContent = msg;
 
   if (type === 'error') {
@@ -1288,7 +1466,7 @@ async function fetchRequestsPageData() {
     renderNewEmployeeRequestsTable(newEmpRequests);
     renderUsersTable(users);
   } catch (err) {
-    showToast('Məlumatlar yüklənərkən xəta baş verdi');
+    showToast('Məlumatlar yüklənərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1343,7 +1521,7 @@ function renderEditRequestsTable(list) {
       <td style="white-space:nowrap">${dateStr}</td>
       <td style="text-align:right">
         <div class="card-acts" style="justify-content:flex-end">
-          <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;background:var(--success);box-shadow:none" onclick="approveEditRequest(${req.id}, ${req.employee_id}, '${newDataEncoded}')">Təsdiqlə</button>
+          <button class="btn btn-primary" style="padding:6px 12px;font-size:12px;background:var(--success);box-shadow:none" onclick="approveEditRequest(${req.id})">Təsdiqlə</button>
           <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="rejectEditRequest(${req.id})">Rədd et</button>
         </div>
       </td>
@@ -1434,50 +1612,27 @@ async function approveNewEmployeeRequest(reqId) {
     await fetchPendingRequestsCount();
     await fetchEmployees();
   } catch (err) {
-    showToast('Təsdiqləyərkən xəta baş verdi');
+    showToast('Təsdiqləyərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
 
-function renderUsersTable(list) {
-  const tb = document.getElementById('usersTableBody');
-  if (!list || !list.length) {
-    tb.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">İstifadəçi tapılmadı</td></tr>`;
-    return;
-  }
-  tb.innerHTML = list.map(u => {
-    return `<tr>
-      <td>${u.username}</td>
-      <td>${u.email}</td>
-      <td><span class="dept-chip" style="background:${u.role === 'admin' ? 'rgba(79,70,229,0.1)' : 'rgba(16,185,129,0.1)'}; color:${u.role === 'admin' ? 'var(--accent)' : 'var(--success)'}">${u.role === 'admin' ? 'Admin' : 'İstifadəçi'}</span></td>
-      <td style="font-family:monospace">${u.password}</td>
-      <td style="text-align:right">
-        <button class="act-btn" style="display:inline-flex" onclick="openDirectPassModal(${u.id}, '${u.username}')" title="Şifrəni Dəyiş">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1m0 0a2 2 0 114 0m-4 0v5"/></svg>
-        </button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-async function approveEditRequest(reqId, employeeId, newDataEncoded) {
+async function approveEditRequest(reqId) {
   if (!confirm('Bu redəktə sorğusunu təsdiqləyirsiniz? Əməkdaş məlumatları yenilənəcək.')) return;
   try {
-    const newData = JSON.parse(decodeURIComponent(newDataEncoded));
-    const r1 = await fetch(`${API_URL}/employees/${employeeId}`, {
-      method: 'PATCH', headers: HEADERS, body: JSON.stringify(newData)
-    });
-    if (!r1.ok) throw new Error('Employee update failed');
-    const r2 = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
+    const r = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
       method: 'PATCH', headers: HEADERS, body: JSON.stringify({ status: 'approved', resolved_at: new Date().toISOString() })
     });
-    if (!r2.ok) throw new Error('Request update failed');
-    showToast('Sorğu təsdiqlendi, məlumatlar yenilendi ✓');
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || 'Approval failed');
+    }
+    showToast('Sorğu təsdiqləndi, məlumatlar yeniləndi ✓');
     await fetchRequestsPageData();
     await fetchPendingRequestsCount();
     await fetchEmployees();
   } catch (err) {
-    showToast('Təsdiqləyərkən xəta baş verdi');
+    showToast('Təsdiqləyərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1493,7 +1648,7 @@ async function rejectEditRequest(reqId) {
     await fetchRequestsPageData();
     await fetchPendingRequestsCount();
   } catch (err) {
-    showToast('Rədd edilərkən xəta baş verdi');
+    showToast('Rədd edilərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1508,7 +1663,7 @@ function openDirectPassModal(userId, username) {
 async function saveDirectPassword() {
   const userId = document.getElementById('directPassUserId').value;
   const newPass = document.getElementById('directPassInput').value.trim();
-  if (!newPass) { showToast('Yeni şifrəni daxil edin!'); return; }
+  if (!newPass) { showToast('Yeni şifrəni daxil edin!', 'error'); return; }
 
   try {
     const res = await fetch(`${API_URL}/portal_users/${userId}`, { method: 'PATCH', headers: HEADERS, body: JSON.stringify({ password: newPass }) });
@@ -1518,7 +1673,7 @@ async function saveDirectPassword() {
     closeModal('directPassModal');
     await fetchRequestsPageData();
   } catch (err) {
-    showToast('Şifrə yenilənərkən xəta baş verdi');
+    showToast('Şifrə yenilənərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1689,7 +1844,7 @@ window.saveDomain = async function () {
   const id = document.getElementById('domainEditId').value;
   const name = document.getElementById('domainNameInput').value.trim();
 
-  if (!name) { showToast('Ad sahəsi məcburidir!'); return; }
+  if (!name) { showToast('Ad sahəsi məcburidir!', 'error'); return; }
 
   let url = `${API_URL}/`;
   let method = id ? 'PATCH' : 'POST';
@@ -1700,7 +1855,7 @@ window.saveDomain = async function () {
   } else if (type === 'sector') {
     url += `sectors${id ? '/' + id : ''}`;
     const selectedDept = document.getElementById('domainParentDeptSelect').value;
-    if (!selectedDept) { showToast('Şöbə seçmək məcburidir!'); return; }
+    if (!selectedDept) { showToast('Şöbə seçmək məcburidir!', 'error'); return; }
     body.dept_id = selectedDept;
   } else if (type === 'pos') {
     url += `positions${id ? '/' + id : ''}`;
@@ -1722,7 +1877,7 @@ window.saveDomain = async function () {
     await fetchEmployees();
     if (currentPage === 'domains') renderDomainsPage();
   } catch (err) {
-    showToast(err.message || 'Xəta baş verdi');
+    showToast(err.message || 'Xəta baş verdi', 'error');
     console.error(err);
   }
 };
@@ -1746,7 +1901,7 @@ window.deleteDomain = async function (type, id) {
     await fetchEmployees();
     if (currentPage === 'domains') renderDomainsPage();
   } catch (err) {
-    showToast(err.message || 'Silinərkən xəta baş verdi');
+    showToast(err.message || 'Silinərkən xəta baş verdi', 'error');
     console.error(err);
   }
 };
@@ -1756,6 +1911,36 @@ document.addEventListener('click', (e) => {
     document.querySelectorAll('.org-mobile-custom-select.open').forEach(el => el.classList.remove('open'));
   }
 });
+
+window.clearAllData = async function (type) {
+  const typeMap = {
+    'employees': 'əməkdaşları',
+    'departments': 'şöbələri',
+    'sectors': 'sektorları',
+    'positions': 'vəzifələri'
+  };
+
+  const typeName = typeMap[type] || 'məlumatları';
+  if (!confirm(`DİQQƏT: Bütün ${typeName} bazadan həmişəlik silinəcək. Davam etmək istədiyinizə əminsiniz?`)) return;
+
+  try {
+    const res = await fetch(`${API_URL}/admin/clear/${type}`, { method: 'DELETE', headers: HEADERS });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Silinmə uğursuz oldu');
+    }
+    showToast(`Bütün ${typeName} uğurla silindi`);
+
+    // Refresh data
+    await fetchDomains();
+    await fetchEmployees();
+    if (currentPage === 'domains') renderDomainsPage();
+    if (currentPage === 'directory') render();
+  } catch (err) {
+    showToast(err.message || 'Silinərkən xəta baş verdi', 'error');
+    console.error(err);
+  }
+};
 
 /* ─── IMPORT PAGE FUNCTIONS ─── */
 
@@ -1775,7 +1960,7 @@ const CSV_TEMPLATES = {
   },
   employees: {
     headers: ['id', 'name', 'email', 'intphone', 'mobile', 'room', 'car_plate', 'dept_id', 'sector_id', 'position_id'],
-    sample: [['1', 'Anar Həsənov', 'anar@kyltm.az', '1045', '050-123-45-67', '405', '10-AA-001', '1', '1', '1']]
+    sample: [['1', 'Anar Həsənov', 'anar@kyltm.az', '1045', '050-123-45-67', '405', '10-AB-123', '1', '1', '1']]
   }
 };
 
@@ -1786,25 +1971,25 @@ function tableKey(tableName) {
 }
 
 // Fayl seçildikdə
-window.handleFileSelect = function(event, tableName) {
+window.handleFileSelect = function (event, tableName) {
   const file = event.target.files[0];
   if (!file) return;
   processImportFile(file, tableName);
 };
 
 // Drag over
-window.handleDragOver = function(event) {
+window.handleDragOver = function (event) {
   event.preventDefault();
   event.currentTarget.classList.add('drag-over');
 };
 
 // Drag leave
-window.handleDragLeave = function(event) {
+window.handleDragLeave = function (event) {
   event.currentTarget.classList.remove('drag-over');
 };
 
 // Drop
-window.handleDrop = function(event, tableName) {
+window.handleDrop = function (event, tableName) {
   event.preventDefault();
   event.currentTarget.classList.remove('drag-over');
   const file = event.dataTransfer.files[0];
@@ -1816,11 +2001,115 @@ window.handleDrop = function(event, tableName) {
   processImportFile(file, tableName);
 };
 
+// CSV validasiyası
+function validateTableRows(rows, tableName) {
+  const errors = [];
+  const errorMap = {};
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isDigitsOnly = (v) => /^\d+$/.test(String(v).trim());
+  const hasLetter = (v) => /[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u0500-\u052F\u018F\u0259\u01DD\u018F\u011F\u011E\u0131\u0130\u00F6\u00D6\u00FC\u00DC\u00E7\u00C7\u015F\u015E]/i.test(String(v));
+
+  rows.forEach((r, idx) => {
+    const rowNum = idx + 2; // +1 for 1-based, +1 for CSV header row
+
+    const addErr = (col, msg) => {
+      errors.push({ row: rowNum, col, message: msg });
+      errorMap[`${idx}_${col}`] = msg;
+    };
+
+    if (tableName === 'departments') {
+      const rawName = r.name || r['ŞÖBƏ'] || r['Şöbə'] || r['şöbə'];
+      const rawId = r.id || r.NO || r.no;
+      const name = rawName ? String(rawName).trim() : '';
+
+      if (!name) {
+        addErr('name', `Sətir ${rowNum}: 'name' (Şöbə adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        addErr('id', `Sətir ${rowNum}: 'id' sütununda hərf və ya simvol ola bilməz (Daxil edilən: "${rawId}"). Yalnız tam rəqəm olmalıdır.`);
+      }
+
+    } else if (tableName === 'sectors') {
+      const rawName = r.name || r['SEKTOR'] || r['Sektor'] || r['sektor'];
+      const rawId = r.id || r.NO || r.no;
+      const deptId = r.dept_id !== undefined ? String(r.dept_id).trim() : (r['deptId'] !== undefined ? String(r['deptId']).trim() : '');
+      const name = rawName ? String(rawName).trim() : '';
+
+      if (!name) {
+        addErr('name', `Sətir ${rowNum}: 'name' (Sektor adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        addErr('id', `Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (!deptId) {
+        addErr('dept_id', `Sətir ${rowNum}: 'dept_id' (Şöbə ID-si) məcburidir və boş ola bilməz`);
+      } else if (!isDigitsOnly(deptId)) {
+        addErr('dept_id', `Sətir ${rowNum}: 'dept_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${deptId}"). Yalnız şöbənin ID nömrəsi (rəqəm) olmalıdır.`);
+      }
+
+    } else if (tableName === 'positions') {
+      const rawName = r.name || r['VƏZİFƏ'] || r['Vəzifə'] || r['vəzifə'];
+      const rawId = r.id || r.NO || r.no;
+      const name = rawName ? String(rawName).trim() : '';
+
+      if (!name) {
+        addErr('name', `Sətir ${rowNum}: 'name' (Vəzifə adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        addErr('id', `Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+
+    } else if (tableName === 'employees') {
+      const rawName = r.name || r['Ad'] || r['Ad Soyad'] || r['AD SOYAD'];
+      const name = rawName ? String(rawName).trim() : '';
+      const rawId = r.id ? String(r.id).trim() : '';
+      const deptId = r.dept_id ? String(r.dept_id).trim() : '';
+      const sectorId = r.sector_id ? String(r.sector_id).trim() : '';
+      const positionId = r.position_id ? String(r.position_id).trim() : '';
+      const email = r.email ? String(r.email).trim() : '';
+      const intphone = r.intphone ? String(r.intphone).trim() : '';
+      const mobile = r.mobile ? String(r.mobile).trim() : '';
+
+      if (!name) {
+        addErr('name', `Sətir ${rowNum}: 'name' (Əməkdaşın adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        addErr('id', `Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (deptId && !isDigitsOnly(deptId)) {
+        addErr('dept_id', `Sətir ${rowNum}: 'dept_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${deptId}"). Yalnız şöbə ID-si (rəqəm) olmalıdır.`);
+      }
+      if (sectorId && !isDigitsOnly(sectorId)) {
+        addErr('sector_id', `Sətir ${rowNum}: 'sector_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${sectorId}"). Yalnız sektor ID-si (rəqəm) olmalıdır.`);
+      }
+      if (positionId && !isDigitsOnly(positionId)) {
+        addErr('position_id', `Sətir ${rowNum}: 'position_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${positionId}"). Yalnız vəzifə ID-si (rəqəm) olmalıdır.`);
+      }
+      if (email && !emailRegex.test(email)) {
+        addErr('email', `Sətir ${rowNum}: 'email' formatı yanlışdır (Daxil edilən: "${email}"). Nümunə: ad@domen.az`);
+      }
+      if (intphone && hasLetter(intphone)) {
+        addErr('intphone', `Sətir ${rowNum}: 'intphone' (daxili telefon) sütununda hərf ola bilməz (Daxil edilən: "${intphone}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (mobile) {
+        if (hasLetter(mobile)) {
+          addErr('mobile', `Sətir ${rowNum}: 'mobile' (mobil nömrə) sütununda hərf ola bilməz (Daxil edilən: "${mobile}"). Nümunə: 050-123-45-67 və ya 994502439132`);
+        } else {
+          // Normalize mobile number in row object for import and preview
+          r.mobile = formatMobileNumber(mobile);
+        }
+      }
+    }
+  });
+
+  return { isValid: errors.length === 0, errors, errorMap };
+}
+
 // Faylı oxuyub preview göstər
 function processImportFile(file, tableName) {
   const key = tableKey(tableName);
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = function (e) {
     const content = e.target.result;
     const rows = parseCsvText(content);
     if (!rows || rows.length === 0) {
@@ -1828,30 +2117,76 @@ function processImportFile(file, tableName) {
       return;
     }
 
+    // Validasiya et
+    const validation = validateTableRows(rows, tableName);
+
+    // Dropzone-a rows və validasiya nəticəsini bağla
+    const dropzoneEl = document.getElementById('dropzone' + key);
+    if (dropzoneEl) {
+      dropzoneEl._csvRows = rows;
+      dropzoneEl._validation = validation;
+    }
+
     // File info göstər
     const fileInfoEl = document.getElementById('fileInfo' + key);
     if (fileInfoEl) {
-      fileInfoEl.innerHTML = `
-        <div class="import-file-badge">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-          </svg>
-          <span><strong>${file.name}</strong> — ${rows.length} sətir tapıldı</span>
-        </div>
-      `;
+      if (validation.isValid) {
+        fileInfoEl.innerHTML = `
+          <div class="import-file-badge" style="background:#F0FDF4;border:1px solid #86EFAC;color:#166534">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+            </svg>
+            <span><strong>${file.name}</strong> — ${rows.length} sətir tapıldı (Validasiyadan keçdi ✓)</span>
+          </div>
+        `;
+      } else {
+        fileInfoEl.innerHTML = `
+          <div class="import-file-badge" style="background:#FEF2F2;border:1px solid #FCA5A5;color:#991B1B">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            <span><strong>${file.name}</strong> — ${validation.errors.length} xəta tapıldı</span>
+          </div>
+          <div style="background:#FFF5F5;border:1px solid #FEB2B2;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:12px">
+            <div style="font-weight:700;color:#C53030;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+              <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              CSV-də xətalar var (İdxal etmək üçün xətaları düzəldin):
+            </div>
+            <ul style="margin:0;padding-left:18px;color:#9B2C2C;max-height:130px;overflow-y:auto;line-height:1.6">
+              ${validation.errors.map(err => `<li><b>${err.message}</b></li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }
       fileInfoEl.style.display = '';
     }
 
-    // Preview göstər (ilk 5 sətir)
+    // Preview göstər (ilk 10 sətir)
     const previewEl = document.getElementById('preview' + key);
     if (previewEl) {
-      previewEl.innerHTML = buildPreviewTable(rows, 5);
+      previewEl.innerHTML = buildPreviewTable(rows, 10, validation.errorMap);
       previewEl.style.display = '';
     }
 
     // Actions göstər
     const actionsEl = document.getElementById('actions' + key);
-    if (actionsEl) actionsEl.style.display = '';
+    if (actionsEl) {
+      actionsEl.style.display = '';
+      const importBtn = actionsEl.querySelector('.btn-primary');
+      if (importBtn) {
+        if (!validation.isValid) {
+          importBtn.disabled = true;
+          importBtn.style.opacity = '0.5';
+          importBtn.style.cursor = 'not-allowed';
+          importBtn.title = 'CSV-dəki xətalar düzəldilmədən idxal edilə bilməz';
+        } else {
+          importBtn.disabled = false;
+          importBtn.style.opacity = '';
+          importBtn.style.cursor = '';
+          importBtn.title = '';
+        }
+      }
+    }
 
     // Result sıfırla
     const resultEl = document.getElementById('result' + key);
@@ -1861,10 +2196,10 @@ function processImportFile(file, tableName) {
     const dropzone = document.getElementById('dropzone' + key);
     if (dropzone) dropzone.classList.add('has-file');
 
-    // Faylı data-attr-da saxla
-    const dropzoneEl = document.getElementById('dropzone' + key);
-    if (dropzoneEl) {
-      dropzoneEl._csvRows = rows;
+    if (!validation.isValid) {
+      showToast(`CSV-də ${validation.errors.length} xəta tapıldı!`, 'error');
+    } else {
+      showToast(`CSV yoxlanıldı: ${rows.length} sətir düzgündür ✓`);
     }
   };
   reader.readAsText(file, 'UTF-8');
@@ -1908,7 +2243,7 @@ function parseCsvLine(line) {
 }
 
 // Preview cədvəlini qur
-function buildPreviewTable(rows, maxRows) {
+function buildPreviewTable(rows, maxRows, errorMap = {}) {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0]);
   const displayRows = rows.slice(0, maxRows);
@@ -1918,9 +2253,15 @@ function buildPreviewTable(rows, maxRows) {
   html += '<div class="import-preview-scroll"><table class="import-preview-table"><thead><tr>';
   headers.forEach(h => { html += `<th>${h}</th>`; });
   html += '</tr></thead><tbody>';
-  displayRows.forEach(row => {
+  displayRows.forEach((row, rIdx) => {
     html += '<tr>';
-    headers.forEach(h => { html += `<td>${row[h] || ''}</td>`; });
+    headers.forEach(h => {
+      const errKey = `${rIdx}_${h}`;
+      const hasErr = !!errorMap[errKey];
+      const cellStyle = hasErr ? 'style="background:#FEE2E2;color:#DC2626;font-weight:700;border:1px solid #EF4444;"' : '';
+      const cellTitle = hasErr ? `title="${errorMap[errKey]}"` : '';
+      html += `<td ${cellStyle} ${cellTitle}>${row[h] || ''}</td>`;
+    });
     html += '</tr>';
   });
   html += '</tbody></table></div>';
@@ -1928,13 +2269,19 @@ function buildPreviewTable(rows, maxRows) {
 }
 
 // Import çalışdır
-window.runImport = async function(tableName) {
+window.runImport = async function (tableName) {
   const key = tableKey(tableName);
   const dropzoneEl = document.getElementById('dropzone' + key);
   const rows = dropzoneEl ? dropzoneEl._csvRows : null;
+  const validation = dropzoneEl ? dropzoneEl._validation : null;
 
   if (!rows || rows.length === 0) {
     showToast('İdxal üçün məlumat tapılmadı!', 'error');
+    return;
+  }
+
+  if (validation && !validation.isValid) {
+    showToast(`CSV-də ${validation.errors.length} xəta var, idxal edilə bilməz!`, 'error');
     return;
   }
 
@@ -1957,7 +2304,10 @@ window.runImport = async function(tableName) {
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
+      const errDetails = data.details && Array.isArray(data.details)
+        ? `<ul style="margin:6px 0 0 16px;padding:0;text-align:left;font-size:12px">${data.details.map(d => `<li>${d}</li>`).join('')}</ul>`
+        : '';
+      throw new Error((data.error || `HTTP ${res.status}`) + errDetails);
     }
 
     if (resultEl) {
@@ -1980,11 +2330,14 @@ window.runImport = async function(tableName) {
   } catch (err) {
     if (resultEl) {
       resultEl.innerHTML = `
-        <div class="import-result-error">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-          <span>Xəta: ${err.message}</span>
+        <div class="import-result-error" style="display:block">
+          <div style="display:flex;align-items:center;gap:6px">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+            <span><strong>İdxal xətası:</strong></span>
+          </div>
+          <div style="margin-top:4px">${err.message}</div>
         </div>
       `;
     }
@@ -1996,11 +2349,12 @@ window.runImport = async function(tableName) {
 };
 
 // Import sıfırla
-window.clearImport = function(tableName) {
+window.clearImport = function (tableName) {
   const key = tableKey(tableName);
   const dropzoneEl = document.getElementById('dropzone' + key);
   if (dropzoneEl) {
     dropzoneEl._csvRows = null;
+    dropzoneEl._validation = null;
     dropzoneEl.classList.remove('has-file', 'drag-over');
   }
   ['fileInfo', 'preview', 'actions', 'result'].forEach(prefix => {
@@ -2014,7 +2368,7 @@ window.clearImport = function(tableName) {
 };
 
 // Şablon yüklə
-window.downloadTemplate = function(tableName) {
+window.downloadTemplate = function (tableName) {
   const tpl = CSV_TEMPLATES[tableName];
   if (!tpl) return;
 
@@ -2036,10 +2390,10 @@ window.downloadTemplate = function(tableName) {
 };
 
 // Bütün bazanı Export etmək
-window.exportAllTables = async function() {
+window.exportAllTables = async function () {
   const tables = ['departments', 'sectors', 'positions', 'employees'];
   showToast('Bütün cədvəllərin exportu başladılır...', 'success');
-  
+
   for (const table of tables) {
     try {
       const res = await fetch(`${API_URL}/export/${table}`);

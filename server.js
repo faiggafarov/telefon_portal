@@ -17,6 +17,17 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
+  max: 20,                      // Eyni vaxtda maksimum bağlantı sayı
+  idleTimeoutMillis: 30000,     // 30 saniyə boş qalan bağlantıları bağla
+  connectionTimeoutMillis: 8000, // 8 saniyə ərzində bağlantı qurulamazsa xəta ver
+  keepAlive: true,              // Firewall/bulud hostinqin bağlantını kəsməməsi üçün
+  keepAliveInitialDelayMillis: 10000
+});
+
+// Pool səviyyəsindəki gözlənilməz xətaları tut — serverin çöküşünün qarşısını al
+pool.on('error', (err) => {
+  console.error('Unexpected PostgreSQL pool error (client idle):', err.message);
+  // Serverı çökdürmürük, sadəcə loga yazırıq
 });
 
 // Test DB Connection + Auto-fix sequences on startup
@@ -61,6 +72,44 @@ app.post('/api/admin/sync-sequences', async (req, res) => {
   } catch (err) {
     console.error('Sequence sync error:', err.message);
     res.status(500).json({ error: 'Sequence sync failed', details: err.message });
+  }
+});
+
+// CLEAR DATA ENDPOINTS
+app.delete('/api/admin/clear/employees', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM employee_edit_requests');
+    await pool.query('DELETE FROM employees');
+    res.json({ success: true, message: 'Bütün əməkdaşlar silindi' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear employees', details: err.message });
+  }
+});
+
+app.delete('/api/admin/clear/departments', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM departments');
+    res.json({ success: true, message: 'Bütün şöbələr silindi' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear departments', details: err.message });
+  }
+});
+
+app.delete('/api/admin/clear/sectors', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM sectors');
+    res.json({ success: true, message: 'Bütün sektorlar silindi' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear sectors', details: err.message });
+  }
+});
+
+app.delete('/api/admin/clear/positions', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM positions');
+    res.json({ success: true, message: 'Bütün vəzifələr silindi' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear positions', details: err.message });
   }
 });
 
@@ -314,7 +363,7 @@ app.get('/api/employees', async (req, res) => {
       LEFT JOIN departments d ON d.id = e.dept_id
       LEFT JOIN sectors     s ON s.id = e.sector_id
       LEFT JOIN positions   p ON p.id = e.position_id
-      ORDER BY e.created_at DESC
+      ORDER BY e.id ASC
     `);
     res.json(result.rows);
   } catch (err) {
@@ -329,10 +378,12 @@ app.post('/api/employees', async (req, res) => {
 
   try {
     const normalizedEmail = (email && String(email).trim()) || null;
+    const normalizedMobile = formatMobileNumber(mobile);
+    const normalizedCarPlate = formatCarPlate(car_plate);
     const result = await pool.query(
       `INSERT INTO employees (name, position_id, dept_id, sector_id, email, intphone, mobile, room, car_plate)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [name, position_id || null, dept_id || null, sector_id || null, normalizedEmail, intphone || null, mobile || null, room || null, car_plate || null]
+      [name, position_id || null, dept_id || null, sector_id || null, normalizedEmail, intphone || null, normalizedMobile, room || null, normalizedCarPlate]
     );
     const full = await pool.query(`
       SELECT e.*, d.name AS dept_name, s.name AS sector_name, p.name AS position_name, s.dept_id AS sector_parent_dept_id
@@ -370,6 +421,8 @@ app.patch('/api/employees/:id', async (req, res) => {
     if (!allowed.includes(key)) continue;
     let normalized = value === '' ? null : value;
     if (key === 'email') normalized = (value && String(value).trim()) || null;
+    if (key === 'mobile') normalized = formatMobileNumber(value);
+    if (key === 'car_plate') normalized = formatCarPlate(value);
     setClauses.push(`${key} = $${index}`);
     values.push(normalized);
     index++;
@@ -472,6 +525,7 @@ app.post('/api/employee_edit_requests', async (req, res) => {
 
 // Update edit request status (approve/reject)
 // If approving a new_employee request, the employee is automatically created.
+// If approving an edit request, only the changed fields (diff) are updated on the employee record.
 app.patch('/api/employee_edit_requests/:id', async (req, res) => {
   const { id } = req.params;
   const { status, resolved_at } = req.body;
@@ -481,19 +535,56 @@ app.patch('/api/employee_edit_requests/:id', async (req, res) => {
     if (reqResult.rows.length === 0) return res.status(404).json({ error: 'Request not found' });
     const editReq = reqResult.rows[0];
 
-    // If approving a new_employee request, create the employee automatically
-    if (status === 'approved' && editReq.request_type === 'new_employee') {
-      const d = editReq.new_data || {};
-      const normalizedEmail = (d.email && String(d.email).trim()) || null;
-      await pool.query(
-        `INSERT INTO employees (name, position_id, dept_id, sector_id, email, intphone, mobile, room, car_plate)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          d.name, d.position_id || null,
-          d.dept_id || null, d.sector_id || null,
-          normalizedEmail, d.intphone || null, d.mobile || null, d.room || null, d.car_plate || null
-        ]
-      );
+    if (status === 'approved') {
+      if (editReq.request_type === 'new_employee') {
+        const d = editReq.new_data || {};
+        const normalizedEmail = (d.email && String(d.email).trim()) || null;
+        const normalizedMobile = formatMobileNumber(d.mobile);
+        const normalizedCarPlate = formatCarPlate(d.car_plate);
+        await pool.query(
+          `INSERT INTO employees (name, position_id, dept_id, sector_id, email, intphone, mobile, room, car_plate)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            d.name, d.position_id || null,
+            d.dept_id || null, d.sector_id || null,
+            normalizedEmail, d.intphone || null, normalizedMobile, d.room || null, normalizedCarPlate
+          ]
+        );
+      } else if (editReq.employee_id) {
+        // Edit request: apply ONLY changed fields (diff between old_data and new_data)
+        const oldD = editReq.old_data || {};
+        const newD = editReq.new_data || {};
+        const allowed = ['name', 'position_id', 'dept_id', 'sector_id', 'email', 'intphone', 'mobile', 'room', 'car_plate'];
+        const setClauses = [];
+        const values = [];
+        let index = 1;
+
+        for (const key of allowed) {
+          const oldV = oldD[key] !== undefined && oldD[key] !== null ? String(oldD[key]).trim() : '';
+          const newV = newD[key] !== undefined && newD[key] !== null ? String(newD[key]).trim() : '';
+
+          // Check if field actually changed
+          const hasChanged = editReq.old_data ? (oldV !== newV) : (newD[key] !== undefined);
+
+          if (hasChanged && newD[key] !== undefined) {
+            let val = newD[key] === '' ? null : newD[key];
+            if (key === 'email') val = (val && String(val).trim()) || null;
+            if (key === 'mobile') val = formatMobileNumber(val);
+            if (key === 'car_plate') val = formatCarPlate(val);
+            setClauses.push(`${key} = $${index}`);
+            values.push(val);
+            index++;
+          }
+        }
+
+        if (setClauses.length > 0) {
+          values.push(editReq.employee_id);
+          await pool.query(
+            `UPDATE employees SET ${setClauses.join(', ')}, updated_at = now() WHERE id = $${index}`,
+            values
+          );
+        }
+      }
     }
 
     const result = await pool.query(
@@ -580,6 +671,146 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+function formatCarPlate(plate) {
+  if (!plate) return null;
+  let s = String(plate).trim().toUpperCase();
+  if (!s) return null;
+  
+  // Nömrə daxilində artıq tire varsa və ya boşluqla ayrılıbsa, təmizləyib standartlaşdıraq
+  // Nümunələr: "10-AB-123", "10 AB 123", "10AB123", "10 - AB - 123", "10-AB 123"
+  const clean = s.replace(/[^A-Z0-9]/g, '');
+  const match = clean.match(/^(\d{2})([A-Z]{2})(\d{3})$/);
+  if (match) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  
+  // Əgər fərqli strukturdadırsa, sadəcə çoxlu boşluqları və tireləri tənzimləyib saxla
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function formatMobileNumber(phone) {
+  if (!phone) return null;
+  const s = String(phone).trim();
+  if (!s) return null;
+
+  // Extract all digits
+  const digits = s.replace(/\D/g, '');
+  if (!digits) return s;
+
+  let localDigits = '';
+  if (digits.startsWith('994') && digits.length >= 12) {
+    localDigits = digits.slice(3, 12);
+  } else if (digits.startsWith('0') && digits.length === 10) {
+    localDigits = digits.slice(1, 10);
+  } else if (digits.length === 9) {
+    localDigits = digits;
+  } else if (digits.length > 9) {
+    localDigits = digits.slice(-9);
+  }
+
+  if (localDigits.length === 9) {
+    const op = localDigits.slice(0, 2);
+    const p1 = localDigits.slice(2, 5);
+    const p2 = localDigits.slice(5, 7);
+    const p3 = localDigits.slice(7, 9);
+    return `+994 ${op}-${p1}-${p2}-${p3}`;
+  }
+
+  if (s.startsWith('+994')) {
+    return s.replace(/^\+994\s*/, '+994 ');
+  }
+  return s;
+}
+
+function validateImportRows(rows, table) {
+  const errors = [];
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const isDigitsOnly = (v) => /^\d+$/.test(String(v).trim());
+  const hasLetter = (v) => /[a-zA-Z\u00C0-\u024F\u1E00-\u1EFF\u0400-\u04FF\u0500-\u052F\u018F\u0259\u01DD\u018F\u011F\u011E\u0131\u0130\u00F6\u00D6\u00FC\u00DC\u00E7\u00C7\u015F\u015E]/i.test(String(v));
+
+  rows.forEach((r, idx) => {
+    const rowNum = idx + 2; // +1 for 1-based, +1 for CSV header row
+
+    if (table === 'departments') {
+      const rawName = r.name || r['ŞÖBƏ'] || r['Şöbə'] || r['şöbə'];
+      const rawId = r.id || r.NO || r.no;
+      const name = rawName ? String(rawName).trim() : null;
+
+      if (!name) {
+        errors.push(`Sətir ${rowNum}: 'name' (Şöbə adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        errors.push(`Sətir ${rowNum}: 'id' sütununda hərf və ya simvol ola bilməz (Daxil edilən: "${rawId}"). Yalnız tam rəqəm olmalıdır.`);
+      }
+    } else if (table === 'sectors') {
+      const rawName = r.name || r['SEKTOR'] || r['Sektor'] || r['sektor'];
+      const rawId = r.id || r.NO || r.no;
+      const deptId = r.dept_id ? String(r.dept_id).trim() : '';
+      const name = rawName ? String(rawName).trim() : null;
+
+      if (!name) {
+        errors.push(`Sətir ${rowNum}: 'name' (Sektor adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        errors.push(`Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (!deptId) {
+        errors.push(`Sətir ${rowNum}: 'dept_id' (Şöbə ID-si) məcburidir və boş ola bilməz`);
+      } else if (!isDigitsOnly(deptId)) {
+        errors.push(`Sətir ${rowNum}: 'dept_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${deptId}"). Yalnız şöbənin ID nömrəsi (rəqəm) olmalıdır.`);
+      }
+    } else if (table === 'positions') {
+      const rawName = r.name || r['VƏZİFƏ'] || r['Vəzifə'] || r['vəzifə'];
+      const rawId = r.id || r.NO || r.no;
+      const name = rawName ? String(rawName).trim() : null;
+
+      if (!name) {
+        errors.push(`Sətir ${rowNum}: 'name' (Vəzifə adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        errors.push(`Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+    } else if (table === 'employees') {
+      const rawName = r.name || r['Ad'] || r['Ad Soyad'] || r['AD SOYAD'];
+      const name = rawName ? String(rawName).trim() : null;
+      const rawId = r.id ? String(r.id).trim() : '';
+      const deptId = r.dept_id ? String(r.dept_id).trim() : '';
+      const sectorId = r.sector_id ? String(r.sector_id).trim() : '';
+      const positionId = r.position_id ? String(r.position_id).trim() : '';
+      const email = r.email ? String(r.email).trim() : '';
+      const intphone = r.intphone ? String(r.intphone).trim() : '';
+      const mobile = r.mobile ? String(r.mobile).trim() : '';
+
+      if (!name) {
+        errors.push(`Sətir ${rowNum}: 'name' (Əməkdaşın adı) boş ola bilməz`);
+      }
+      if (rawId && !isDigitsOnly(rawId)) {
+        errors.push(`Sətir ${rowNum}: 'id' sütununda hərf ola bilməz (Daxil edilən: "${rawId}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (deptId && !isDigitsOnly(deptId)) {
+        errors.push(`Sətir ${rowNum}: 'dept_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${deptId}"). Yalnız şöbə ID-si (rəqəm) olmalıdır.`);
+      }
+      if (sectorId && !isDigitsOnly(sectorId)) {
+        errors.push(`Sətir ${rowNum}: 'sector_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${sectorId}"). Yalnız sektor ID-si (rəqəm) olmalıdır.`);
+      }
+      if (positionId && !isDigitsOnly(positionId)) {
+        errors.push(`Sətir ${rowNum}: 'position_id' sütununda hərf və ya mətn ola bilməz (Daxil edilən: "${positionId}"). Yalnız vəzifə ID-si (rəqəm) olmalıdır.`);
+      }
+      if (email && !emailRegex.test(email)) {
+        errors.push(`Sətir ${rowNum}: 'email' formatı yanlışdır (Daxil edilən: "${email}"). Nümunə: ad@domen.az`);
+      }
+      if (intphone && hasLetter(intphone)) {
+        errors.push(`Sətir ${rowNum}: 'intphone' (daxili telefon) sütununda hərf ola bilməz (Daxil edilən: "${intphone}"). Yalnız rəqəm olmalıdır.`);
+      }
+      if (mobile && hasLetter(mobile)) {
+        errors.push(`Sətir ${rowNum}: 'mobile' (mobil nömrə) sütununda hərf ola bilməz (Daxil edilən: "${mobile}"). Nümunə: 050-123-45-67`);
+      }
+    }
+  });
+
+  return errors;
+}
+
 /* ─── CSV IMPORT API ─── */
 
 // POST /api/import/:table — JSON rows import
@@ -595,6 +826,16 @@ app.post('/api/import/:table', async (req, res) => {
   const { rows } = req.body;
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ error: 'rows massivi boş və ya yanlışdır' });
+  }
+
+  // Pre-validate CSV data before DB connection/queries
+  const validationErrors = validateImportRows(rows, table);
+  if (validationErrors.length > 0) {
+    return res.status(400).json({
+      error: `CSV faylında ${validationErrors.length} xəta tapıldı. Zəhmət olmasa düzəliş edib təkrar cəhd edin.`,
+      details: validationErrors.slice(0, 30),
+      totalErrors: validationErrors.length
+    });
   }
 
   const client = await pool.connect();
@@ -674,9 +915,9 @@ app.post('/api/import/:table', async (req, res) => {
 
           const email = r.email && String(r.email).trim() ? String(r.email).trim() : null;
           const intphone = r.intphone && String(r.intphone).trim() ? String(r.intphone).trim() : null;
-          const mobile = r.mobile && String(r.mobile).trim() ? String(r.mobile).trim() : null;
+          const mobile = formatMobileNumber(r.mobile);
           const room = r.room && String(r.room).trim() ? String(r.room).trim() : null;
-          const carPlate = r.car_plate && String(r.car_plate).trim() ? String(r.car_plate).trim().toUpperCase() : null;
+          const carPlate = formatCarPlate(r.car_plate);
           const deptId = r.dept_id ? parseInt(r.dept_id) : null;
           const sectorId = r.sector_id ? parseInt(r.sector_id) : null;
           const positionId = r.position_id ? parseInt(r.position_id) : null;
