@@ -1,6 +1,8 @@
 /* ─── AUTH & API CONFIG ─── */
 const API_URL = 'http://localhost:3000/api';
 const HEADERS = { 'Content-Type': 'application/json' };
+const sessionToken = localStorage.getItem('portalToken');
+if (sessionToken) HEADERS.Authorization = `Bearer ${sessionToken}`;
 
 let portalUserRole = localStorage.getItem('portalRole') || 'user';
 let portalUserName = localStorage.getItem('portalName') || 'İstifadəçi';
@@ -12,6 +14,7 @@ let employees = [];
 let nextId = 1, editingId = null, currentView = 'card', currentPage = 'directory';
 let editRequestMode = false; // true when non-admin is submitting an edit request
 let editRequestOriginalData = null; // snapshot of current employee data
+const employeeNameCollator = new Intl.Collator('az', { usage: 'sort', sensitivity: 'accent' });
 let searchField = 'all'; // 'all' or specific field key
 let orgSelectedDeptId = null;
 let orgSearchQuery = '';
@@ -125,40 +128,62 @@ function formatMobilePhone(input) {
 }
 window.formatMobilePhone = formatMobilePhone;
 
+function syncAuthHeader() {
+  const isAdmin = portalUserRole === 'admin';
+  document.documentElement.dataset.headerRole = isAdmin ? 'admin' : 'user';
+  const loginBtn = document.getElementById('adminLoginBtn');
+  const userCard = document.getElementById('userCard');
+  const adminDropdown = document.getElementById('adminNavDropdown');
+  if (loginBtn) {
+    if (isAdmin) {
+      loginBtn.style.setProperty('display', 'none', 'important');
+    } else {
+      loginBtn.style.removeProperty('display');
+    }
+  }
+  if (userCard) {
+    if (!isAdmin) {
+      userCard.style.setProperty('display', 'none', 'important');
+    } else {
+      userCard.style.removeProperty('display');
+    }
+  }
+  if (adminDropdown) {
+    if (!isAdmin) {
+      adminDropdown.style.setProperty('display', 'none', 'important');
+    } else {
+      adminDropdown.style.removeProperty('display');
+    }
+  }
+}
+window.syncAuthHeader = syncAuthHeader;
+syncAuthHeader();
+
 document.addEventListener('DOMContentLoaded', async () => {
-  const initStr = portalUserName.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
-  document.getElementById('sidebarAvatar').textContent = initStr;
-  document.getElementById('sidebarName').textContent = portalUserName;
-  document.getElementById('sidebarRole').textContent = portalUserRole === 'admin' ? 'Sistem İdarəçisi' : 'İşçi İstifadəçi';
-
+  syncAuthHeader();
   if (portalUserRole === 'admin') {
-    document.getElementById('navRequests').style.display = 'flex';
-    document.getElementById('navDomains').style.display = 'flex';
-    document.getElementById('navImport').style.display = 'flex';
-    document.getElementById('addBtn').style.display = 'inline-flex';
-    const adminBtn = document.getElementById('adminLoginBtn');
-    if (adminBtn) adminBtn.style.display = 'none';
-
-    // Hide name, role and avatar so only the logout button is visible inside userCard
-    const avatar = document.getElementById('sidebarAvatar');
-    if (avatar) avatar.style.display = 'none';
-    const userInfo = document.querySelector('.topbar-user-info');
-    if (userInfo) userInfo.style.display = 'none';
+    try {
+      const response = await fetch(`${API_URL}/auth/me`, { headers: HEADERS });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          ['portalToken', 'portalRole', 'portalName', 'portalUserId'].forEach(key => localStorage.removeItem(key));
+          window.location.reload();
+          return;
+        }
+        throw new Error('Session verification unavailable');
+      }
+    } catch (error) {
+      portalUserRole = 'user';
+      syncAuthHeader();
+      showToast('Admin sessiyasını yoxlamaq mümkün olmadı. Səhifəni yeniləyin.', 'error');
+    }
+  }
+  if (portalUserRole === 'admin') {
 
     fetchPendingRequestsCount();
     setInterval(fetchPendingRequestsCount, 30000);
     // Auto-sync sequences on admin panel entry/refresh (silently)
     syncSequences(false);
-  } else {
-    const addBtn = document.getElementById('addBtn');
-    if (addBtn) {
-      addBtn.style.display = 'inline-flex';
-    }
-    const logoutBtn = document.querySelector('.logout-btn');
-    if (logoutBtn) logoutBtn.style.display = 'none';
-
-    const userCard = document.getElementById('userCard');
-    if (userCard) userCard.style.display = 'none';
   }
 
   // Load domains first, then load employees
@@ -166,9 +191,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchEmployees();
 });
 
-function logout() {
-  localStorage.clear();
-  window.location.reload();
+async function logout() {
+  try {
+    const response = await fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: HEADERS });
+    if (!response.ok && response.status !== 401 && response.status !== 403) throw new Error('Logout failed');
+    ['portalToken', 'portalRole', 'portalName', 'portalUserId'].forEach(key => localStorage.removeItem(key));
+    window.location.reload();
+  } catch (error) {
+    showToast('Çıxış mümkün olmadı. Yenidən cəhd edin.', 'error');
+  }
 }
 
 async function syncSequences(showFeedback = true) {
@@ -208,34 +239,135 @@ async function syncSequences(showFeedback = true) {
 }
 window.syncSequences = syncSequences;
 
-async function promptAdminLogin() {
-  const pwd = prompt("Admin şifrəsini daxil edin:");
-  if (pwd === null) return;
-  if (!pwd.trim()) {
-    alert("Şifrə boş ola bilməz!");
+let adminLoginPending = false;
+let adminLoginController = null;
+let adminLoginPreviousOverflow = '';
+let adminLoginReturnFocus = null;
+
+function clearAdminLoginError() {
+  document.getElementById('adminLoginError').hidden = true;
+  document.getElementById('adminLoginPassword').removeAttribute('aria-invalid');
+}
+
+function promptAdminLogin() {
+  const dialog = document.getElementById('adminLoginModal');
+  if (dialog.open) return;
+  adminLoginReturnFocus = document.activeElement;
+  document.getElementById('adminLoginForm').reset();
+  clearAdminLoginError();
+  const input = document.getElementById('adminLoginPassword');
+  input.type = 'password';
+  const toggle = document.getElementById('adminLoginToggle');
+  toggle.setAttribute('aria-label', 'Şifrəni göstər');
+  toggle.setAttribute('aria-pressed', 'false');
+  updateAdminPasswordToggleIcon(false);
+  adminLoginPreviousOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  dialog.showModal();
+  input.focus();
+}
+
+function closeAdminLogin() {
+  document.getElementById('adminLoginModal').close();
+}
+
+const eyeOpenSvg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+const eyeOffSvg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+function updateAdminPasswordToggleIcon(visible) {
+  const toggle = document.getElementById('adminLoginToggle');
+  if (toggle) toggle.innerHTML = visible ? eyeOpenSvg : eyeOffSvg;
+}
+
+function toggleAdminPassword() {
+  const input = document.getElementById('adminLoginPassword');
+  const visible = input.type === 'password';
+  input.type = visible ? 'text' : 'password';
+  const toggle = document.getElementById('adminLoginToggle');
+  toggle.setAttribute('aria-label', visible ? 'Şifrəni gizlət' : 'Şifrəni göstər');
+  toggle.setAttribute('aria-pressed', String(visible));
+  updateAdminPasswordToggleIcon(visible);
+}
+
+async function submitAdminLogin(event) {
+  event.preventDefault();
+  if (adminLoginPending) return;
+  const input = document.getElementById('adminLoginPassword');
+  const error = document.getElementById('adminLoginError');
+  const submit = document.getElementById('adminLoginSubmit');
+  const setError = (message) => {
+    error.textContent = message;
+    error.hidden = false;
+    input.setAttribute('aria-invalid', 'true');
+    input.focus();
+  };
+  if (!input.value.trim()) {
+    setError('Şifrəni daxil edin.');
     return;
   }
+  clearAdminLoginError();
+  adminLoginPending = true;
+  const controller = new AbortController();
+  adminLoginController = controller;
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  submit.disabled = true;
+  submit.querySelector('span').textContent = 'Yoxlanılır…';
+  document.getElementById('adminLoginForm').setAttribute('aria-busy', 'true');
   try {
-    const res = await fetch(`${API_URL}/auth/login`, {
+    const res = await fetch(API_URL + '/auth/login', {
       method: 'POST',
       headers: HEADERS,
-      body: JSON.stringify({ username: 'Admin', password: pwd })
+      signal: controller.signal,
+      body: JSON.stringify({
+        username: (document.getElementById('adminLoginUsername')?.value || 'Admin').trim(),
+        password: input.value
+      })
     });
+    if (!document.getElementById('adminLoginModal').open) return;
     if (res.ok) {
       const data = await res.json();
+      if (controller.signal.aborted) return;
       localStorage.setItem('portalRole', data.role);
+      localStorage.setItem('portalToken', data.token);
       localStorage.setItem('portalName', data.username);
       localStorage.setItem('portalUserId', String(data.id));
+      input.value = '';
       window.location.reload();
     } else {
-      const err = await res.json().catch(() => ({ error: "Şifrə yanlışdır!" }));
-      alert(err.error || "Şifrə yanlışdır!");
+      const data = await res.json().catch(() => ({}));
+      if (!controller.signal.aborted) setError(data.error || 'Şifrə yanlışdır. Yenidən cəhd edin.');
     }
   } catch (err) {
-    console.error(err);
-    alert("Qoşulma xətası baş verdi!");
+    if (document.getElementById('adminLoginModal').open) {
+      setError(err.name === 'AbortError' ? 'Sorğunun vaxtı bitdi. Yenidən cəhd edin.' : 'Serverə qoşulmaq mümkün olmadı. Yenidən cəhd edin.');
+    }
+  } finally {
+    clearTimeout(timeout);
+    adminLoginController = null;
+    adminLoginPending = false;
+    submit.disabled = false;
+    submit.querySelector('span').textContent = 'Daxil ol';
+    document.getElementById('adminLoginForm').removeAttribute('aria-busy');
   }
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  const dialog = document.getElementById('adminLoginModal');
+  let backdropPressed = false;
+  dialog.addEventListener('pointerdown', (event) => {
+    backdropPressed = event.target === dialog;
+  });
+  dialog.addEventListener('click', (event) => {
+    if (backdropPressed && event.target === dialog) closeAdminLogin();
+    backdropPressed = false;
+  });
+  dialog.addEventListener('close', () => {
+    if (adminLoginController) adminLoginController.abort();
+    document.getElementById('adminLoginPassword').value = '';
+    document.body.style.overflow = adminLoginPreviousOverflow;
+    if (adminLoginReturnFocus && adminLoginReturnFocus.isConnected) adminLoginReturnFocus.focus();
+  });
+});
 
 /* ─── DATA & API ─── */
 
@@ -301,26 +433,81 @@ async function fetchDomains() {
   }
 }
 
-window.copyToClipboard = function (text, event, label = 'Email') {
-  if (event) event.stopPropagation();
+window.copyToClipboard = function (text, event, label = 'Email', triggerBtn = null) {
+  if (event) {
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+  }
   if (!text || text === 'null') return;
-  navigator.clipboard.writeText(text).then(() => {
+
+  const btn = triggerBtn || (event && event.currentTarget ? event.currentTarget : null);
+
+  const onSuccess = () => {
     showToast(`${label} kopyalandı!`);
-  }).catch(() => {
-    // Fallback
-    const textarea = document.createElement('textarea');
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      document.execCommand('copy');
-      showToast(`${label} kopyalandı!`);
-    } catch (e) {
-      showToast('Kopyalama uğursuz oldu', 'error');
+    if (btn && btn.classList) {
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.classList.remove('copied');
+      }, 1500);
     }
-    document.body.removeChild(textarea);
-  });
+  };
+
+  const onFail = () => {
+    showToast('Kopyalama uğursuz oldu', 'error');
+  };
+
+  const fallbackCopy = () => {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      // Prevent scrolling & keyboard popups on iOS / restricted mobile browsers
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '0';
+      textarea.style.width = '2em';
+      textarea.style.height = '2em';
+      textarea.style.padding = '0';
+      textarea.style.border = 'none';
+      textarea.style.outline = 'none';
+      textarea.style.boxShadow = 'none';
+      textarea.style.background = 'transparent';
+      textarea.setAttribute('readonly', '');
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (successful) {
+        onSuccess();
+      } else {
+        onFail();
+      }
+    } catch (e) {
+      onFail();
+    }
+  };
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+      fallbackCopy();
+    });
+  } else {
+    fallbackCopy();
+  }
 };
+
+function renderEmailWithCopy(email, extraClass = '') {
+  if (!email || email === 'null') return '<strong>-</strong>';
+  const escaped = String(email).replace(/'/g, "\\'");
+  return `<span class="email-container ${extraClass}">` +
+    `<span class="email-text">${email}</span>` +
+    `<button type="button" class="email-copy-btn" onclick="copyToClipboard('${escaped}', event, 'Email', this)" title="Emaili kopyala" aria-label="Emaili kopyala">` +
+      `<svg class="copy-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>` +
+      `<svg class="check-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` +
+    `</button>` +
+  `</span>`;
+}
 
 async function fetchEmployees() {
   try {
@@ -334,22 +521,46 @@ async function fetchEmployees() {
   }
 }
 
-function updateStats() {
-  const animate = (id, val) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    let start = 0, step = Math.max(val / 20, 1);
-    const t = setInterval(() => {
-      start += step;
-      if (start >= val) { el.textContent = val; clearInterval(t); }
-      else el.textContent = Math.floor(start);
-    }, 30);
+const statAnimations = new WeakMap();
+
+function animateStatCount(element, target) {
+  const previous = statAnimations.get(element);
+  if (previous && previous.target === target) return;
+  if (previous) {
+    cancelAnimationFrame(previous.frame);
+    statAnimations.delete(element);
+  }
+  const from = Number(element.textContent) || 0;
+  if (from === target || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    element.textContent = String(target);
+    return;
+  }
+  const animation = { target, frame: null };
+  const started = performance.now();
+  const duration = 350;
+  const step = (now) => {
+    const progress = Math.min(Math.max((now - started) / duration, 0), 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.textContent = String(Math.round(from + (target - from) * eased));
+    if (progress < 1) {
+      animation.frame = requestAnimationFrame(step);
+    } else {
+      element.textContent = String(target);
+      statAnimations.delete(element);
+    }
   };
-  const uniqueRooms = [...new Set(employees.map(e => (e.room || '').trim().toLowerCase()).filter(Boolean))].length;
-  const carOwners = employees.filter(e => e.car_plate && e.car_plate.trim() !== '').length;
-  animate('totalCount', employees.length);
-  animate('roomCount', uniqueRooms);
-  animate('carCount', carOwners);
+  statAnimations.set(element, animation);
+  animation.frame = requestAnimationFrame(step);
+}
+
+function updateStats(list) {
+  const uniqueRooms = new Set(list.map(e => String(e.room || '').trim().toLocaleLowerCase('az')).filter(Boolean)).size;
+  const carOwners = list.filter(e => String(e.car_plate || '').trim() !== '').length;
+  const counts = { totalCount: list.length, roomCount: uniqueRooms, carCount: carOwners };
+  Object.entries(counts).forEach(([id, count]) => {
+    const element = document.getElementById(id);
+    if (element) animateStatCount(element, count);
+  });
 }
 
 document.addEventListener('click', (e) => {
@@ -423,7 +634,7 @@ window.selectFormCS = function (csId, val, text) {
   const selectedEl = el.querySelector('.form-cs-selected');
   const hiddenInput = el.querySelector('input[type="hidden"]');
   if (selectedEl) {
-    selectedEl.textContent = val ? text : text; // placeholder text passed in
+    selectedEl.textContent = text;
     selectedEl.classList.toggle('placeholder', !val);
   }
   if (hiddenInput) {
@@ -558,13 +769,28 @@ function updateFilters() {
   renderCSOptions('cs-pos', 'Bütün vəzifələr', availablePositions.map(p => ({ val: p.id, text: p.name })), pv);
 }
 
+function compareNamesAlphabetically(a, b) {
+  return employeeNameCollator.compare(
+    String(a.name || '').trim().normalize('NFC'),
+    String(b.name || '').trim().normalize('NFC')
+  );
+}
+
+function searchNameRank(employee, query) {
+  const name = String(employee.name || '').normalize('NFC').trim().toLocaleUpperCase('az');
+  const q = query.normalize('NFC').trim().toLocaleUpperCase('az');
+  if (name.startsWith(q)) return 0;
+  if (matchesSearch(employee.name, query)) return 1;
+  return 2;
+}
+
 function getFiltered() {
   const raw = document.getElementById('searchInput').value;
   const q = raw ? raw.trim() : '';
   const d = document.getElementById('deptFilter').value;
   const s = document.getElementById('secFilter') ? document.getElementById('secFilter').value : '';
   const p = document.getElementById('posFilter').value;
-  return employees.filter(e => {
+  const list = employees.filter(e => {
     let ok = true;
     if (q) {
       if (searchField === 'all') {
@@ -579,6 +805,22 @@ function getFiltered() {
     }
     return ok && (!d || String(e.dept_id) === String(d)) && (!s || String(e.sector_id) === String(s)) && (!p || String(e.position_id) === String(p));
   });
+  if (q && (searchField === 'all' || searchField === 'name')) {
+    return list.sort((a, b) =>
+      searchNameRank(a, q) - searchNameRank(b, q) || compareNamesAlphabetically(a, b)
+    );
+  }
+  const leadershipDept = getRehberlikDept();
+  const leadership = [];
+  const remaining = [];
+  list.forEach(employee => {
+    const position = String(employee.position_name || '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('az');
+    const isLeadEngineer = position.includes('APARICI MÜHƏNDİS');
+    const isLeadership = leadershipDept && String(employee.dept_id) === String(leadershipDept.id) && !isLeadEngineer;
+    (isLeadership ? leadership : remaining).push(employee);
+  });
+  remaining.sort(compareNamesAlphabetically);
+  return [...leadership, ...remaining];
 }
 
 function toggleSearchFieldDD(event) {
@@ -621,7 +863,7 @@ function renderCards(list) {
         </div>
       </div>
       <div class="card-body">
-        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><span>Email: ${e.email && e.email !== 'null' ? `<span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;font-weight:600;color:var(--text-main);">${e.email}</span>` : '<strong>-</strong>'}</span></div>
+        <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><span class="card-email-line"><span>Email:</span>${renderEmailWithCopy(e.email)}</span></div>
         <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg><span>Daxili: <strong>${e.intphone || '-'}</strong></span></div>
         <div class="info-row"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><span>Mobil: <strong>${e.mobile || '-'}</strong></span></div>
       </div>
@@ -648,7 +890,7 @@ function renderTable(list) {
     <td>${e.position_name || '—'}</td>
     <td><span class="dept-chip" style="margin:0">${e.dept_name || '—'}</span></td>
     <td>${e.sector_name || '—'}</td>
-    <td>${e.email && e.email !== 'null' ? `<span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;color:#4F46E5;font-weight:600">${e.email}</span>` : '—'}</td>
+    <td>${e.email && e.email !== 'null' ? renderEmailWithCopy(e.email) : '—'}</td>
     <td>${e.intphone || '—'}</td>
     <td>${e.mobile || '—'}</td>
     <td>${e.room || '—'}</td>
@@ -761,11 +1003,11 @@ function getDeptEmployeeCount(deptId) {
 function renderOrgDeptPanel(dept, isActive) {
   const deptEmps = employees.filter(e =>
     String(e.dept_id) === String(dept.id) && getEmployeeRole(e) !== 'director'
-  );
+  ).sort(compareNamesAlphabetically);
   const manager = deptEmps.find(e => getEmployeeRole(e) === 'dept-head');
   const deputies = deptEmps.filter(e => getEmployeeRole(e) === 'dept-deputy');
   const excludeIds = new Set([manager, ...deputies].filter(Boolean).map(e => String(e.id)));
-  const deptSectors = domains.sectors.filter(s => String(s.dept_id) === String(dept.id));
+  const deptSectors = domains.sectors.filter(s => String(s.dept_id) === String(dept.id)).sort(compareNamesAlphabetically);
   const deptGradient = departmentGradient(dept.name);
 
   const deptDirectStaff = deptEmps.filter(e =>
@@ -804,12 +1046,11 @@ function renderOrgDeptPanel(dept, isActive) {
 
 function getFilteredOrgDepts() {
   const q = orgSearchQuery.trim();
-  if (!q) return domains.departments;
   return domains.departments.filter(dept => {
-    if (matchesSearch(dept.name, q)) return true;
+    if (!q || matchesSearch(dept.name, q)) return true;
     const deptSectors = domains.sectors.filter(s => String(s.dept_id) === String(dept.id));
     return deptSectors.some(s => matchesSearch(s.name, q));
-  });
+  }).sort(compareNamesAlphabetically);
 }
 
 window.filterOrgView = function (query) {
@@ -822,10 +1063,46 @@ window.filterOrgView = function (query) {
 };
 
 window.selectOrgDept = function (deptId) {
+  if (String(orgSelectedDeptId) === String(deptId)) return;
   orgSelectedDeptId = deptId;
-  renderDepts();
-  const panel = document.getElementById(`org-dept-${deptId}`);
-  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // 1. Update active state in sidebar nav
+  const navItems = document.querySelectorAll('.org-nav-item');
+  navItems.forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-dept-id') === String(deptId));
+  });
+
+  // 2. Update active state in mobile custom select
+  const mobileOpts = document.querySelectorAll('.org-mobile-custom-select-option');
+  mobileOpts.forEach(opt => {
+    opt.classList.toggle('selected', opt.getAttribute('data-dept-id') === String(deptId));
+  });
+  const triggerText = document.querySelector('.org-mobile-custom-select-trigger-text');
+  const targetDept = domains.departments.find(d => String(d.id) === String(deptId));
+  if (triggerText && targetDept) triggerText.textContent = targetDept.name;
+
+  // 3. Switch active panel smoothly without DOM re-creation
+  const currentActive = document.querySelector('.org-dept-panel.active');
+  const targetPanel = document.getElementById(`org-dept-${deptId}`);
+  if (targetPanel) {
+    if (currentActive && currentActive !== targetPanel) {
+      currentActive.classList.remove('active');
+    }
+    targetPanel.classList.add('active');
+  } else {
+    renderDepts();
+  }
+
+  // 4. Smoothly adjust scroll ONLY if user was scrolled deep below the top of departments
+  const layout = document.querySelector('.org-layout');
+  if (layout) {
+    const rect = layout.getBoundingClientRect();
+    const topOffset = 76; // topbar height + comfortable padding
+    if (rect.top < 0) {
+      const targetScroll = window.scrollY + rect.top - topOffset;
+      window.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+    }
+  }
 };
 
 window.toggleOrgStaff = function (btn, event) {
@@ -966,7 +1243,7 @@ function renderDepts() {
               </div>
               <div class="org-mobile-custom-select-options">
                 ${filteredDepts.map(dept => `
-                  <div class="org-mobile-custom-select-option ${String(dept.id) === String(orgSelectedDeptId) ? 'selected' : ''}" onclick="event.stopPropagation(); selectOrgDept('${dept.id}')">
+                  <div class="org-mobile-custom-select-option ${String(dept.id) === String(orgSelectedDeptId) ? 'selected' : ''}" data-dept-id="${dept.id}" onclick="event.stopPropagation(); selectOrgDept('${dept.id}')">
                     <span class="org-nav-name">${dept.name}</span>
                     <span class="org-nav-count">${getDeptEmployeeCount(dept.id)}</span>
                   </div>
@@ -976,7 +1253,7 @@ function renderDepts() {
 
             <nav class="org-nav">
               ${filteredDepts.map(dept => `
-                <button type="button" class="org-nav-item ${String(dept.id) === String(orgSelectedDeptId) ? 'active' : ''}"
+                <button type="button" class="org-nav-item ${String(dept.id) === String(orgSelectedDeptId) ? 'active' : ''}" data-dept-id="${dept.id}"
                   onclick="selectOrgDept('${dept.id}')">
                   <span class="org-nav-name">${dept.name}</span>
                   <span class="org-nav-count">${getDeptEmployeeCount(dept.id)}</span>
@@ -1003,21 +1280,58 @@ function toggleDeptCollapse(el) {
 }
 window.toggleDeptCollapse = toggleDeptCollapse;
 
-function render() {
-  updateStats(); updateFilters();
+let searchRenderTimer = null;
+
+function render({ searchOnly = false } = {}) {
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = null;
+  if (!searchOnly) updateFilters();
   const list = getFiltered();
-  renderCards(list); renderTable(list);
+  updateStats(list);
+  if (currentView === 'card') renderCards(list);
+  else renderTable(list);
   if (currentPage === 'departments') renderDepts();
 }
 function filterEmployees() { render(); }
 
+function scheduleSearch() {
+  clearTimeout(searchRenderTimer);
+  const hasFilter = ['searchInput', 'deptFilter', 'secFilter', 'posFilter']
+    .some(id => document.getElementById(id)?.value);
+  const clearBtn = document.getElementById('clearFiltersBtn');
+  if (clearBtn) clearBtn.style.display = hasFilter ? 'inline-flex' : 'none';
+  // Keep repeated key presses responsive; rebuild results after a brief pause.
+  searchRenderTimer = setTimeout(() => render({ searchOnly: true }), 180);
+}
+
 function setView(v) {
   currentView = v;
+  render({ searchOnly: true });
   document.getElementById('cardGrid').classList.toggle('hidden', v === 'table');
   document.getElementById('tableWrap').classList.toggle('active', v === 'table');
   document.getElementById('cardViewBtn').classList.toggle('active', v === 'card');
   document.getElementById('tableViewBtn').classList.toggle('active', v === 'table');
 }
+
+function toggleAdminNavDropdown(event) {
+  event?.stopPropagation();
+  const dropdown = document.getElementById('adminNavDropdown');
+  if (dropdown) dropdown.classList.toggle('open');
+}
+
+function closeAdminNavDropdown() {
+  const dropdown = document.getElementById('adminNavDropdown');
+  if (dropdown) dropdown.classList.remove('open');
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#adminNavDropdown')) {
+    closeAdminNavDropdown();
+  }
+});
+
+window.toggleAdminNavDropdown = toggleAdminNavDropdown;
+window.closeAdminNavDropdown = closeAdminNavDropdown;
 
 async function setPage(p) {
   currentPage = p;
@@ -1030,6 +1344,22 @@ async function setPage(p) {
   const searchBox = document.getElementById('searchBox');
   if (searchBox) {
     searchBox.style.display = p === 'directory' ? '' : 'none';
+  }
+
+  const addBtn = document.getElementById('addBtn');
+  if (addBtn) {
+    addBtn.style.display = p === 'directory' ? '' : 'none';
+  }
+
+  if (p !== 'directory') {
+    closeModal('formModal');
+  }
+
+  closeAdminNavDropdown();
+  const isAdminPage = ['requests', 'domains', 'import'].includes(p);
+  const adminDropdownBtn = document.getElementById('navAdminDropdown');
+  if (adminDropdownBtn) {
+    adminDropdownBtn.classList.toggle('active', isAdminPage);
   }
 
   document.getElementById('navDirectory').classList.toggle('active', p === 'directory');
@@ -1057,7 +1387,7 @@ function openView(id) {
     </div>
     <div class="info-section">
       <div class="info-section-title">Əlaqə Məlumatları</div>
-      ${e.email && e.email !== 'null' ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><div><div class="info-item-label">Email</div><div class="info-item-value"><span class="copyable-email" onclick="copyToClipboard('${e.email}', event, 'Email')" title="Kopyalamaq üçün klikləyin" style="cursor:pointer;color:var(--accent);font-weight:600">${e.email}</span></div></div></div>` : ''}
+      ${e.email && e.email !== 'null' ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg><div><div class="info-item-label">Email</div><div class="info-item-value">${renderEmailWithCopy(e.email)}</div></div></div>` : ''}
       ${e.intphone ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg><div><div class="info-item-label">Daxili Tel.</div><div class="info-item-value">${e.intphone}</div></div></div>` : ''}
       ${e.mobile ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg><div><div class="info-item-label">Mobil</div><div class="info-item-value">${e.mobile}</div></div></div>` : ''}
       ${e.room ? `<div class="info-item"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg><div><div class="info-item-label">Otaq Nömrəsi</div><div class="info-item-value">${e.room}</div></div></div>` : ''}
@@ -1068,6 +1398,10 @@ function openView(id) {
       <button class="btn btn-primary" style="flex:1;justify-content:center" onclick="closeModal('viewModal');openEdit(${e.id})">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         Redəktə et
+      </button>
+      <button class="btn" style="justify-content:center;background:#FEF2F2;color:#EF4444;border:1px solid #FCA5A5;padding:0 18px;font-weight:600" onclick="deleteEmp(${e.id})" title="Bazadan sil">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        Sil
       </button>
       ` : `
       <button class="btn" style="flex:1;justify-content:center;background:#F0F4FF;color:var(--accent);border:1px solid var(--accent); ${Number(e.dept_id) === 1 ? 'opacity: 0.5; cursor: not-allowed;' : ''}" ${Number(e.dept_id) === 1 ? 'disabled' : ''} onclick="closeModal('viewModal'); if (Number(${e.dept_id}) !== 1) openEdit(${e.id})">
@@ -1081,6 +1415,7 @@ function openView(id) {
 }
 
 function openAddModal() {
+  if (currentPage !== 'directory') return;
   editingId = null;
   editRequestMode = false;
   editRequestOriginalData = null;
@@ -1388,15 +1723,20 @@ async function saveNewEmployeeRequest(data) {
 }
 
 async function deleteEmp(id) {
-  if (!confirm('Bu əməkdaşı silmək istədiyinizə əminsiniz?')) return;
+  if (!confirm('Bu əməkdaşı bazadan tamamilə silmək istədiyinizə əminsiniz?')) return;
   try {
     const res = await fetch(`${API_URL}/employees/${id}`, { method: 'DELETE', headers: HEADERS });
-    if (!res.ok) throw new Error('Delete failed');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Delete failed');
+    }
     employees = employees.filter(x => String(x.id) !== String(id));
-    showToast('Əməkdaş silindi');
+    closeModal('viewModal');
+    showToast('Əməkdaş bazadan uğurla silindi');
     render();
+    if (currentPage === 'departments') renderDepts();
   } catch (err) {
-    showToast('Silinərkən xəta baş verdi', 'error');
+    showToast(err.message || 'Silinərkən xəta baş verdi', 'error');
     console.error(err);
     await fetchEmployees();
   }
@@ -1439,9 +1779,14 @@ async function fetchPendingRequestsCount() {
     const data = await res.json();
     const count = data.count || 0;
     const badge = document.getElementById('reqBadge');
+    const dropBadge = document.getElementById('adminDropdownBadge');
     if (badge) {
       if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
       else { badge.style.display = 'none'; }
+    }
+    if (dropBadge) {
+      if (count > 0) { dropBadge.textContent = count; dropBadge.style.display = 'inline-flex'; }
+      else { dropBadge.style.display = 'none'; }
     }
   } catch (err) {
     console.error(err);
@@ -2301,7 +2646,19 @@ window.runImport = async function (tableName) {
       headers: HEADERS,
       body: JSON.stringify({ rows })
     });
-    const data = await res.json();
+    const responseText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      if (res.status === 413) {
+        throw new Error('Göndərilən məlumat serverin ölçü limitini keçir (HTTP 413).');
+      }
+      throw new Error('Server JSON cavabı qaytarmadı (HTTP ' + res.status + ').');
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Serverin cavab formatı yanlışdır (HTTP ' + res.status + ').');
+    }
 
     if (!res.ok) {
       const errDetails = data.details && Array.isArray(data.details)
@@ -2396,7 +2753,7 @@ window.exportAllTables = async function () {
 
   for (const table of tables) {
     try {
-      const res = await fetch(`${API_URL}/export/${table}`);
+      const res = await fetch(`${API_URL}/export/${table}`, { headers: HEADERS });
       if (res.ok) {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);

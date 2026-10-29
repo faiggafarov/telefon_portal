@@ -8,7 +8,17 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+app.use('/api/import', express.json({ limit: '5mb' }));
 app.use(express.json());
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Göndərilən məlumat serverin ölçü limitini keçir. İdxal limiti: 5 MB.' });
+  }
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Sorğunun JSON formatı yanlışdır.' });
+  }
+  next(err);
+});
 
 // PostgreSQL Connection Pool
 const pool = new Pool({
@@ -57,6 +67,14 @@ pool.connect(async (err, client, release) => {
 /* ─── DOMAIN TABLES API ─── */
 
 // POST /api/admin/sync-sequences — manually trigger sequence sync
+const auth = require('./auth').createAuth(pool);
+app.use('/api', auth.guard);
+app.get('/api/auth/me', (req, res) => res.json(req.authUser));
+app.post('/api/auth/logout', (req, res) => {
+  auth.logout(req);
+  res.json({ success: true });
+});
+
 app.post('/api/admin/sync-sequences', async (req, res) => {
   const tables = ['employees', 'departments', 'sectors', 'positions', 'portal_users', 'employee_edit_requests'];
   const results = {};
@@ -124,8 +142,7 @@ app.get('/api/domains', async (req, res) => {
     res.json({
       departments: depts.rows,
       sectors: sectors.rows,
-      positions: positions.rows,
-      system_positions: []
+      positions: positions.rows
     });
   } catch (err) {
     console.error(err);
@@ -150,7 +167,7 @@ app.post('/api/departments', async (req, res) => {
   try {
     const result = await pool.query(
       'INSERT INTO departments (name) VALUES ($1) RETURNING *',
-      [name.trim()]
+      Array.of(name.trim())
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -166,7 +183,7 @@ app.patch('/api/departments/:id', async (req, res) => {
   try {
     const result = await pool.query(
       'UPDATE departments SET name = $1 WHERE id = $2 RETURNING *',
-      [name.trim(), id]
+      Array.of(name.trim(), id)
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
@@ -214,7 +231,7 @@ app.post('/api/sectors', async (req, res) => {
   try {
     const result = await pool.query(
       'INSERT INTO sectors (name, dept_id) VALUES ($1, $2) RETURNING *',
-      [name.trim(), dept_id]
+      Array.of(name.trim(), dept_id)
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -230,7 +247,7 @@ app.patch('/api/sectors/:id', async (req, res) => {
   try {
     const result = await pool.query(
       'UPDATE sectors SET name = $1, dept_id = COALESCE($2, dept_id) WHERE id = $3 RETURNING *',
-      [name.trim(), dept_id || null, id]
+      Array.of(name.trim(), dept_id || null, id)
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
@@ -287,7 +304,7 @@ app.post('/api/positions', async (req, res) => {
   try {
     const result = await pool.query(
       'INSERT INTO positions (name) VALUES ($1) RETURNING *',
-      [name.trim()]
+      Array.of(name.trim())
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -312,7 +329,7 @@ app.patch('/api/positions/:id', async (req, res) => {
 
     const result = await pool.query(
       'UPDATE positions SET name = $1 WHERE id = $2 RETURNING *',
-      [name.trim(), id]
+      Array.of(name.trim(), id)
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
@@ -458,6 +475,7 @@ app.patch('/api/employees/:id', async (req, res) => {
 app.delete('/api/employees/:id', async (req, res) => {
   const { id } = req.params;
   try {
+    await pool.query('DELETE FROM employee_edit_requests WHERE employee_id = $1', [id]);
     const result = await pool.query('DELETE FROM employees WHERE id = $1 RETURNING *', [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Employee not found' });
     res.json({ message: 'Employee deleted successfully' });
@@ -514,7 +532,7 @@ app.post('/api/employee_edit_requests', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO employee_edit_requests (employee_id, employee_name, old_data, new_data, status, requested_by, request_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [employee_id || null, employee_name, JSON.stringify(old_data), JSON.stringify(new_data), status || 'pending', requested_by, request_type || 'edit']
+      [employee_id || null, employee_name, JSON.stringify(old_data), JSON.stringify(new_data), 'pending', requested_by, request_type || 'edit']
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -604,7 +622,7 @@ app.patch('/api/employee_edit_requests/:id', async (req, res) => {
 // Get all portal users
 app.get('/api/portal_users', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM portal_users ORDER BY username ASC');
+    const result = await pool.query('SELECT id, username, email, role, is_active, created_at FROM portal_users ORDER BY username ASC');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -616,18 +634,22 @@ app.get('/api/portal_users', async (req, res) => {
 app.patch('/api/portal_users/:id', async (req, res) => {
   const { id } = req.params;
   const { password } = req.body;
+  if (typeof password !== 'string' || !password.trim() || password.length > 1024) {
+    return res.status(400).json({ error: 'Etibarlı şifrə daxil edin.' });
+  }
   try {
     let hashedPassword = password;
     if (password) {
       const bcrypt = require('bcrypt');
       hashedPassword = await bcrypt.hash(password, 10);
     }
-    
+
     const result = await pool.query(
-      'UPDATE portal_users SET password = $1 WHERE id = $2 RETURNING *',
+      'UPDATE portal_users SET password = $1 WHERE id = $2 RETURNING id, username, email, role, is_active, created_at',
       [hashedPassword, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
+    auth.revokeUser(id);
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -636,10 +658,11 @@ app.patch('/api/portal_users/:id', async (req, res) => {
 });
 
 // Authenticate Admin / Portal Users
-app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'İstifadəçi adı və şifrə daxil edilməlidir' });
+app.post('/api/auth/login', auth.limitLogin, async (req, res) => {
+  let { username, password } = req.body;
+  if (!username) username = 'Admin';
+  if (typeof username !== 'string' || typeof password !== 'string' || !password || username.length > 200 || password.length > 1024) {
+    return res.status(400).json({ error: 'Şifrə daxil edilməlidir' });
   }
   try {
     const result = await pool.query(
@@ -647,20 +670,21 @@ app.post('/api/auth/login', async (req, res) => {
       [username]
     );
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'İstifadəçi adı və ya şifrə yanlışdır!' });
+      return res.status(401).json({ error: 'Şifrə yanlışdır!' });
     }
     const user = result.rows[0];
-    
+
     // Hash müqayisəsi
     const bcrypt = require('bcrypt');
     const isMatch = await bcrypt.compare(password, user.password);
-    
+
     // Keçmişdə yaradılan düz (plain-text) şifrələrin müvəqqəti işləməsi üçün:
     if (!isMatch && user.password !== password) {
       return res.status(401).json({ error: 'Şifrə yanlışdır!' });
     }
 
     res.json({
+      token: auth.issue(user),
       id: user.id,
       username: user.username,
       role: user.role
@@ -675,7 +699,7 @@ function formatCarPlate(plate) {
   if (!plate) return null;
   let s = String(plate).trim().toUpperCase();
   if (!s) return null;
-  
+
   // Nömrə daxilində artıq tire varsa və ya boşluqla ayrılıbsa, təmizləyib standartlaşdıraq
   // Nümunələr: "10-AB-123", "10 AB 123", "10AB123", "10 - AB - 123", "10-AB 123"
   const clean = s.replace(/[^A-Z0-9]/g, '');
@@ -683,7 +707,7 @@ function formatCarPlate(plate) {
   if (match) {
     return `${match[1]}-${match[2]}-${match[3]}`;
   }
-  
+
   // Əgər fərqli strukturdadırsa, sadəcə çoxlu boşluqları və tireləri tənzimləyib saxla
   return s.replace(/\s+/g, ' ').trim();
 }
@@ -977,7 +1001,7 @@ app.get('/api/export/:table', async (req, res) => {
   try {
     const result = await pool.query(`SELECT * FROM ${table} ORDER BY id ASC`);
     const rows = result.rows;
-    
+
     if (rows.length === 0) {
       return res.status(200).send(''); // Empty CSV
     }
