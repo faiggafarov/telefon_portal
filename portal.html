@@ -994,20 +994,20 @@
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Başlama Saatı *</label>
-                        <input class="form-input" id="mStartTime" type="time" onchange="onStartTimeChange()" required>
+                        <div class="form-cs" id="fcs-mStartTime">
+                            <div class="form-cs-selected" onclick="toggleFormCS('fcs-mStartTime')">10:00</div>
+                            <div class="form-cs-options" id="fcs-mStartTime-opts" style="max-height: 220px;"></div>
+                            <input type="hidden" id="mStartTime" value="10:00" onchange="onStartTimeChange()">
+                        </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                            <label class="form-label" style="font-weight: 600; margin: 0;">Bitmə Saatı *</label>
-                            <!-- Quick duration buttons -->
-                            <div style="display: flex; gap: 4px;">
-                                <button type="button" class="btn btn-ghost" onclick="setMeetingDuration(30)" style="padding: 2px 7px; font-size: 11px; height: 22px; border-radius: 5px; font-weight: 600;" title="Başlama saatından 30 dəqiqə sonraya təyin et">+30 dəq</button>
-                                <button type="button" class="btn btn-ghost" onclick="setMeetingDuration(60)" style="padding: 2px 7px; font-size: 11px; height: 22px; border-radius: 5px; font-weight: 600;" title="Başlama saatından 1 saat sonraya təyin et">+1 saat</button>
-                                <button type="button" class="btn btn-ghost" onclick="setMeetingDuration(90)" style="padding: 2px 7px; font-size: 11px; height: 22px; border-radius: 5px; font-weight: 600;" title="Başlama saatından 1.5 saat sonraya təyin et">+1.5 saat</button>
-                            </div>
+                        <label class="form-label" style="font-weight: 600;">Bitmə Saatı *</label>
+                        <div class="form-cs" id="fcs-mEndTime">
+                            <div class="form-cs-selected" onclick="toggleFormCS('fcs-mEndTime')">11:00</div>
+                            <div class="form-cs-options" id="fcs-mEndTime-opts" style="max-height: 220px;"></div>
+                            <input type="hidden" id="mEndTime" value="11:00">
                         </div>
-                        <input class="form-input" id="mEndTime" type="time" required>
                     </div>
 
                     <!-- Participants Selection Section -->

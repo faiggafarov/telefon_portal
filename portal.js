@@ -3380,42 +3380,79 @@ function renderDayTimeline(dateStr) {
   }).join('');
 }
 
-function onStartTimeChange() {
-  const startInput = document.getElementById('mStartTime');
-  const endInput = document.getElementById('mEndTime');
-  if (!startInput || !endInput) return;
-
-  const startVal = startInput.value;
-  if (!startVal) return;
-
-  // Set min attribute for end time
-  endInput.min = startVal;
-
-  // If current end time is empty or earlier/equal to start time, auto advance by 1 hour
-  if (!endInput.value || endInput.value <= startVal) {
-    setMeetingDuration(60);
+/* Generate time options at 30-min intervals */
+function generateTimeOptions() {
+  const times = [];
+  for (let h = 8; h <= 21; h++) {
+    for (let m of [0, 30]) {
+      if (h === 21 && m === 30) continue;
+      const str = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      times.push(str);
+    }
   }
+  return times;
 }
 
-function setMeetingDuration(minutesToAdd) {
-  const startInput = document.getElementById('mStartTime');
-  const endInput = document.getElementById('mEndTime');
-  if (!startInput || !endInput) return;
+function initMeetingTimePickers(startVal = '10:00', endVal = '11:00') {
+  const allTimes = generateTimeOptions();
 
-  const startVal = startInput.value || '10:00';
-  const parts = startVal.split(':').map(Number);
-  const totalMinutes = parts[0] * 60 + parts[1] + minutesToAdd;
+  // 1. Populate Start Time options
+  const startOpts = allTimes.map(t => ({ val: t, text: t }));
+  populateFormCS('fcs-mStartTime', startOpts, null, false);
+  setFormCS('fcs-mStartTime', startVal, startVal);
 
-  const endH = Math.floor(totalMinutes / 60) % 24;
-  const endM = totalMinutes % 60;
+  // 2. Populate End Time options based on startVal
+  updateEndTimeOptions(startVal, endVal);
+}
 
-  const endVal = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-  endInput.value = endVal;
-  endInput.min = startVal;
+function updateEndTimeOptions(startVal, currentEndVal = '') {
+  const allTimes = generateTimeOptions();
+  // Filter end times to be strictly after startVal
+  let filtered = allTimes.filter(t => t > startVal);
+  if (filtered.length === 0) {
+    filtered = [allTimes[allTimes.length - 1]];
+  }
+
+  // Generate friendly label with duration: e.g. "10:30 (30 dəq)" or "11:00 (1 saat)"
+  const startParts = startVal.split(':').map(Number);
+  const startMin = startParts[0] * 60 + startParts[1];
+
+  const endOpts = filtered.map(t => {
+    const p = t.split(':').map(Number);
+    const diff = p[0] * 60 + p[1] - startMin;
+    let durStr = '';
+    if (diff === 30) durStr = ' (30 dəq)';
+    else if (diff === 60) durStr = ' (1 saat)';
+    else if (diff === 90) durStr = ' (1.5 saat)';
+    else if (diff % 60 === 0) durStr = ` (${diff / 60} saat)`;
+    else durStr = ` (${Math.floor(diff / 60)} s. ${diff % 60} dəq)`;
+
+    return { val: t, text: `${t}${durStr}` };
+  });
+
+  populateFormCS('fcs-mEndTime', endOpts, null, false);
+
+  // If currentEndVal is invalid or <= startVal, pick first option (30 min) or 1 hour
+  let targetEnd = currentEndVal;
+  if (!targetEnd || targetEnd <= startVal) {
+    const oneHourOpt = filtered.find(t => {
+      const p = t.split(':').map(Number);
+      return (p[0] * 60 + p[1] - startMin) === 60;
+    });
+    targetEnd = oneHourOpt || filtered[0];
+  }
+
+  const selectedOpt = endOpts.find(o => o.val === targetEnd) || endOpts[0];
+  setFormCS('fcs-mEndTime', selectedOpt.val, selectedOpt.text);
+}
+
+function onStartTimeChange() {
+  const startVal = document.getElementById('mStartTime')?.value || '10:00';
+  const endVal = document.getElementById('mEndTime')?.value || '';
+  updateEndTimeOptions(startVal, endVal);
 }
 
 window.onStartTimeChange = onStartTimeChange;
-window.setMeetingDuration = setMeetingDuration;
 
 function openMeetingModal(meetingId = null, presetDate = null) {
   if (portalUserRole !== 'admin') {
@@ -3449,9 +3486,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('mOrganizer').value = m.organizer || '';
     populateMeetingDepts(m.dept_id || '');
     document.getElementById('mDate').value = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-    document.getElementById('mStartTime').value = m.start_time.slice(0, 5);
-    document.getElementById('mEndTime').value = m.end_time.slice(0, 5);
-    document.getElementById('mEndTime').min = m.start_time.slice(0, 5);
+    initMeetingTimePickers(m.start_time.slice(0, 5), m.end_time.slice(0, 5));
     document.getElementById('mDescription').value = m.description || '';
     currentSelectedParticipants = Array.isArray(m.participants) ? [...m.participants] : [];
     if (delBtn) delBtn.style.display = 'inline-flex';
@@ -3464,9 +3499,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('mOrganizer').value = portalUserName || '';
     populateMeetingDepts('');
     document.getElementById('mDate').value = initialDate;
-    document.getElementById('mStartTime').value = '10:00';
-    document.getElementById('mEndTime').value = '11:00';
-    document.getElementById('mEndTime').min = '10:00';
+    initMeetingTimePickers('10:00', '11:00');
     document.getElementById('mDescription').value = '';
     currentSelectedParticipants = [];
     if (delBtn) delBtn.style.display = 'none';
