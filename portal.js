@@ -1,5 +1,5 @@
 /* ─── AUTH & API CONFIG ─── */
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 const HEADERS = { 'Content-Type': 'application/json' };
 const sessionToken = localStorage.getItem('portalToken');
 if (sessionToken) HEADERS.Authorization = `Bearer ${sessionToken}`;
