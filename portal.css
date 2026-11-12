@@ -4671,8 +4671,8 @@ html[data-header-role="user"] #userCard { display: none !important; }
 .ios-time-picker-dialog {
     background: #FFFFFF;
     border-radius: 20px;
-    width: 330px;
-    max-width: 92vw;
+    width: 370px;
+    max-width: 94vw;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     overflow: hidden;
     animation: scaleModal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
