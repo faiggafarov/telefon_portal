@@ -3342,16 +3342,19 @@ function renderDayTimeline(dateStr) {
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             ${start} – ${end}
           </span>
-          ${portalUserRole === 'admin' ? `
-            <div style="display: flex; gap: 4px;">
+          <div style="display: flex; gap: 4px; align-items: center;">
+            <button class="act-btn" title="Outlook Təqviminə (.ics) Əlavə Et" style="width: 26px; height: 26px; color: #0284C7;" onclick="downloadMeetingIcs(${m.id})">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            </button>
+            ${portalUserRole === 'admin' ? `
               <button class="act-btn" title="Redaktə et" style="width: 26px; height: 26px;" onclick="openMeetingModal(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               </button>
               <button class="act-btn red" title="Sil" style="width: 26px; height: 26px;" onclick="deleteMeeting(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
         <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px;">${m.title}</div>
         <div style="font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
@@ -3528,6 +3531,13 @@ async function saveMeeting() {
     showToast(meetingId ? 'İclas məlumatları yeniləndi ✓' : 'İclas uğurla təyin edildi ✓');
     closeModal('meetingModal');
 
+    // If new meeting created, automatically trigger Outlook .ics download so admin can open in Outlook with 1-click
+    if (!meetingId && data && data.id) {
+      setTimeout(() => {
+        downloadMeetingIcs(data.id);
+      }, 400);
+    }
+
     // Reload and refresh UI
     const parts = meeting_date.split('-');
     await loadMeetingsForMonth(Number(parts[0]), Number(parts[1]));
@@ -3575,6 +3585,78 @@ function deleteMeetingFromModal() {
   const meetingId = document.getElementById('meetingEditId').value;
   if (meetingId) deleteMeeting(meetingId);
 }
+
+/* ─── OUTLOOK / ICALENDAR (.ICS) GENERATOR & DOWNLOADER ─── */
+function downloadMeetingIcs(meetingId) {
+  const m = currentMonthMeetings.find(x => String(x.id) === String(meetingId));
+  if (!m) {
+    showToast('İclas məlumatları tapılmadı', 'error');
+    return;
+  }
+
+  const dateStr = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
+  const [year, month, day] = dateStr.split('-');
+  const [startH, startM] = m.start_time.slice(0, 5).split(':');
+  const [endH, endM] = m.end_time.slice(0, 5).split(':');
+
+  const dtStart = `${year}${month}${day}T${startH}${startM}00`;
+  const dtEnd = `${year}${month}${day}T${endH}${endM}00`;
+  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+  const participantsList = Array.isArray(m.participants) ? m.participants : [];
+  const attendeeLines = participantsList
+    .filter(p => p && p.email)
+    .map(p => `ATTENDEE;CN=${p.name || p.email};ROLE=REQ-PARTICIPANT:mailto:${p.email}`)
+    .join('\r\n');
+
+  const summary = m.title;
+  const description = `Təşkilatçı: ${m.organizer}\\nŞöbə: ${m.dept_name || '—'}\\n${m.description ? m.description.replace(/\n/g, '\\n') : ''}`;
+  const location = 'İclas Zalı (Mərkəz)';
+
+  const icsData = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Kadastr və Yerquruluşu Layihə-Tədqiqat Mərkəzi//Telefon Portalı//AZ',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:meeting-${m.id}-${dateStr}@telefonportal.az`,
+    `DTSTAMP:${dtStamp}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
+    `SUMMARY:${summary}`,
+    `DESCRIPTION:${description}`,
+    `LOCATION:${location}`,
+    `ORGANIZER;CN=${m.organizer}:mailto:no-reply@telefonportal.az`,
+    attendeeLines,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT15M',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:İclasa 15 dəqiqə qaldı',
+    'END:VALARM',
+    'BEGIN:VALARM',
+    'TRIGGER:-PT60M',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:İclasa 1 saat qaldı',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].filter(Boolean).join('\r\n');
+
+  const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `iclas-${dateStr}-${m.id}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('Outlook təqvim faylı (.ics) yükləndi ✓');
+}
+
+window.downloadMeetingIcs = downloadMeetingIcs;
 
 window.openMeetingModal = openMeetingModal;
 window.saveMeeting = saveMeeting;
