@@ -3051,62 +3051,6 @@ async function initMeetingsPage() {
   await loadMeetingsForMonth(currentMeetingDate.getFullYear(), currentMeetingDate.getMonth() + 1);
   renderMeetingCalendar();
   renderDayTimeline(selectedMeetingDateStr);
-  updateMeetingRoomLiveStatus();
-}
-
-function updateMeetingRoomLiveStatus() {
-  const badge = document.getElementById('meetingRoomLiveStatus');
-  const textEl = document.getElementById('meetingRoomLiveText');
-  if (!badge || !textEl) return;
-
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-  // Find meetings today
-  const todayMeetings = currentMonthMeetings.filter(m => {
-    const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-    return mDate === todayStr;
-  });
-
-  // Check if an active meeting is in progress right now
-  const ongoing = todayMeetings.find(m => {
-    const s = m.start_time.slice(0, 5);
-    const e = m.end_time.slice(0, 5);
-    return currentTimeStr >= s && currentTimeStr < e;
-  });
-
-  if (ongoing) {
-    badge.style.background = 'rgba(239, 68, 68, 0.15)';
-    badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-    badge.style.color = '#FCA5A5';
-    badge.innerHTML = `
-      <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; display: inline-block; box-shadow: 0 0 8px #EF4444; animation: pulse 1.5s infinite;"></span>
-      <span>Zal Məşğuldur (${ongoing.start_time.slice(0, 5)} – ${ongoing.end_time.slice(0, 5)})</span>
-    `;
-    return;
-  }
-
-  // Find next upcoming meeting today
-  const nextMeeting = todayMeetings
-    .filter(m => m.start_time.slice(0, 5) > currentTimeStr)
-    .sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
-
-  badge.style.background = 'rgba(16, 185, 129, 0.15)';
-  badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-  badge.style.color = '#6EE7B7';
-
-  if (nextMeeting) {
-    badge.innerHTML = `
-      <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 8px #10B981;"></span>
-      <span>Zal Boşdur (Növbəti: ${nextMeeting.start_time.slice(0, 5)})</span>
-    `;
-  } else {
-    badge.innerHTML = `
-      <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 8px #10B981;"></span>
-      <span>Zal Gün Ərzində Boşdur</span>
-    `;
-  }
 }
 
 function populateMeetingDepts(selectedDeptId = '') {
