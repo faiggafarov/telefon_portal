@@ -501,7 +501,7 @@ app.get('/api/meetings', async (req, res) => {
   const { month, date, from, to } = req.query;
   try {
     let query = `
-      SELECT m.*, d.name as dept_name
+      SELECT m.*, TO_CHAR(m.meeting_date, 'YYYY-MM-DD') as meeting_date, d.name as dept_name
       FROM meetings m
       LEFT JOIN departments d ON d.id = m.dept_id
     `;

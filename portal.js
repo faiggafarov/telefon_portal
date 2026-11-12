@@ -3182,7 +3182,7 @@ window.exportAllTables = async function () {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const date = new Date().toISOString().split('T')[0];
+        const date = getLocalTodayStr();
         a.download = `${table}_export_${date}.csv`;
         document.body.appendChild(a);
         a.click();
@@ -3203,7 +3203,11 @@ window.exportAllTables = async function () {
 
 /* ─── MEETINGS (İCLAS OTAĞI) SYSTEM ─── */
 let currentMeetingDate = new Date();
-let selectedMeetingDateStr = new Date().toISOString().split('T')[0];
+function getLocalTodayStr() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+let selectedMeetingDateStr = getLocalTodayStr();
 let currentMonthMeetings = [];
 
 async function initMeetingsPage() {
@@ -3250,7 +3254,7 @@ function changeMeetingMonth(delta) {
 
 function goToCurrentMeetingMonth() {
   currentMeetingDate = new Date();
-  selectedMeetingDateStr = new Date().toISOString().split('T')[0];
+  selectedMeetingDateStr = getLocalTodayStr();
   loadMeetingsForMonth(currentMeetingDate.getFullYear(), currentMeetingDate.getMonth() + 1).then(() => {
     renderMeetingCalendar();
     renderDayTimeline(selectedMeetingDateStr);
@@ -3276,7 +3280,7 @@ function renderMeetingCalendar() {
   let startDayOfWeek = firstDay.getDay() - 1;
   if (startDayOfWeek === -1) startDayOfWeek = 6;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalTodayStr();
 
   let html = '';
 
@@ -3771,7 +3775,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
   document.getElementById('meetingEditId').value = meetingId || '';
   const delBtn = document.getElementById('btnDeleteMeeting');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalTodayStr();
   const dateInput = document.getElementById('mDate');
   if (dateInput) {
     dateInput.min = todayStr;
