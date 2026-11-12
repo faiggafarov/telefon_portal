@@ -955,17 +955,17 @@
 
     <!-- MEETING MODAL (Admin Only) -->
     <div class="overlay" id="meetingModal">
-        <div class="modal" style="max-width: 520px;" onclick="event.stopPropagation()">
-            <div class="modal-head" style="background: linear-gradient(135deg, #1E293B, #0F172A); color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <div class="modal" style="width: 720px; max-width: 95vw; overflow-y: visible;" onclick="event.stopPropagation()">
+            <div class="modal-head" style="background: linear-gradient(135deg, #1E293B, #0F172A); color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1); border-radius: 22px 22px 0 0;">
                 <h2 id="meetingModalTitle" style="color: #fff; display: flex; align-items: center; gap: 8px; font-size: 16px;">
                     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" style="color: #38BDF8;">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     Yeni İclas Təyin Et
                 </h2>
-                <button class="modal-x" style="color: #94A3B8;" onclick="closeModal('meetingModal')">&times;</button>
+                <button class="modal-x" style="color: #94A3B8; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15);" onclick="closeModal('meetingModal')">&times;</button>
             </div>
-            <div class="modal-body" style="padding: 22px;">
+            <div class="modal-body" style="padding: 24px 28px; max-height: calc(88vh - 140px); overflow-y: auto;">
                 <input type="hidden" id="meetingEditId">
                 <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 14px;">
                     <div class="form-group full" style="margin-bottom: 0;">
@@ -982,7 +982,7 @@
                         <label class="form-label" style="font-weight: 600;">Aid Olduğu Şöbə *</label>
                         <div class="form-cs" id="fcs-mDept">
                             <div class="form-cs-selected placeholder" onclick="toggleFormCS('fcs-mDept')">Şöbə seçin *</div>
-                            <div class="form-cs-options" id="fcs-mDept-opts"></div>
+                            <div class="form-cs-options" id="fcs-mDept-opts" style="max-height: 220px; right: 0; left: auto; min-width: 100%; width: max-content; max-width: 380px;"></div>
                             <input type="hidden" id="mDept">
                         </div>
                     </div>
@@ -1019,7 +1019,7 @@
                             </div>
                             <div class="form-cs" id="fcs-mParticipantDept" style="max-width: 190px;">
                                 <div class="form-cs-selected placeholder" style="padding: 7px 30px 7px 10px; font-size: 12px; border-radius: 8px;" onclick="toggleFormCS('fcs-mParticipantDept')">Bütün şöbələr</div>
-                                <div class="form-cs-options" id="fcs-mParticipantDept-opts"></div>
+                                <div class="form-cs-options" id="fcs-mParticipantDept-opts" style="max-height: 200px; right: 0; left: auto; min-width: 100%; width: max-content; max-width: 320px;"></div>
                                 <input type="hidden" id="mParticipantDeptFilter" onchange="filterParticipantEmployeesList()">
                             </div>
                         </div>
