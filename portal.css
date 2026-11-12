@@ -4481,6 +4481,17 @@ html[data-header-role="user"] #userCard { display: none !important; }
 }
 
 @media (max-width: 680px) {
+    html, body {
+        overflow-x: hidden !important;
+        max-width: 100vw !important;
+    }
+
+    .main, .page, .meetings-container, .meetings-grid-layout, .meeting-card-box, .meeting-timeline-box {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow-x: hidden !important;
+    }
+
     .meetings-container {
         padding: 10px 0 !important;
     }
@@ -4580,20 +4591,36 @@ html[data-header-role="user"] #userCard { display: none !important; }
 
     /* Modal Mobile Adjustments */
     #meetingModal .modal {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 8px !important;
+        width: calc(100vw - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        margin: 8px auto !important;
         border-radius: 16px !important;
+        box-sizing: border-box !important;
     }
 
     #meetingModal .modal-head {
-        padding: 14px 18px !important;
+        padding: 14px 16px !important;
         border-radius: 16px 16px 0 0 !important;
     }
 
     #meetingModal .meeting-modal-body {
-        padding: 16px 14px !important;
+        padding: 14px 12px !important;
         max-height: calc(88vh - 120px) !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+    }
+
+    #meetingModal .form-group,
+    #meetingModal .form-input,
+    #meetingModal .form-cs {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    #meetingModal #fcs-mParticipantDept {
+        max-width: 140px !important;
+        flex-shrink: 0 !important;
     }
 
     #meetingModal .meeting-form-grid {
