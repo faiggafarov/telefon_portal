@@ -511,7 +511,7 @@ function renderEmailWithCopy(email, extraClass = '') {
 
 async function fetchEmployees() {
   try {
-    window.setPage = setPage; window.openView = openView; window.openEdit = openEdit; window.deleteEmp = deleteEmp; window.filterEmployees = filterEmployees; window.logout = logout; window.openAddModal = openAddModal; window.closeModal = closeModal; window.saveDirectPassword = saveDirectPassword; window.openDirectPassModal = openDirectPassModal; window.approveEditRequest = approveEditRequest; window.rejectEditRequest = rejectEditRequest; window.saveEmployee = saveEmployee; window.showToast = showToast; window.toggleSearchFieldDD = toggleSearchFieldDD; window.setSearchField = setSearchField; window.approveNewEmployeeRequest = approveNewEmployeeRequest; window.renderUsersTable = renderUsersTable; window.copyToClipboard = copyToClipboard;
+    window.setPage = setPage; window.openView = openView; window.openEdit = openEdit; window.deleteEmp = deleteEmp; window.openDeleteModal = openDeleteModal; window.executeDeleteAction = executeDeleteAction; window.filterEmployees = filterEmployees; window.logout = logout; window.openAddModal = openAddModal; window.closeModal = closeModal; window.saveDirectPassword = saveDirectPassword; window.openDirectPassModal = openDirectPassModal; window.approveEditRequest = approveEditRequest; window.rejectEditRequest = rejectEditRequest; window.saveEmployee = saveEmployee; window.showToast = showToast; window.toggleSearchFieldDD = toggleSearchFieldDD; window.setSearchField = setSearchField; window.approveNewEmployeeRequest = approveNewEmployeeRequest; window.renderUsersTable = renderUsersTable; window.copyToClipboard = copyToClipboard;
     const res = await apiRequest(`${API_URL}/employees`);
     employees = await res.json() || [];
     render();
@@ -851,6 +851,7 @@ function renderCards(list) {
   g.innerHTML = list.map((e, i) => {
     const bg = departmentGradient(e.dept_name);
     const delay = `animation-delay:${i * 0.04}s`;
+    const isRehberlik = Number(e.dept_id) === 1 || (e.dept_name && e.dept_name.toLocaleUpperCase('az').includes('RƏHBƏRL'));
     return `<div class="emp-card" style="${delay}" onclick="openView(${e.id})">
       <div class="card-banner" style="background:${bg}"></div>
       <div class="card-top">
@@ -872,9 +873,10 @@ function renderCards(list) {
         <div class="card-acts">
           ${portalUserRole === 'admin' ? `
           <button class="act-btn" title="Redəktə" onclick="event.stopPropagation();openEdit(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
-          <button class="act-btn red" title="Sil" onclick="event.stopPropagation();deleteEmp(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+          ${!isRehberlik ? `<button class="act-btn red" title="Sil" onclick="event.stopPropagation();openDeleteModal(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
           ` : `
-          <button class="act-btn" title="Redəktə Sorğusu" ${Number(e.dept_id) === 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="event.stopPropagation(); if (Number(${e.dept_id}) !== 1) openEdit(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+          <button class="act-btn" title="Redəktə Sorğusu" ${isRehberlik ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="event.stopPropagation(); if (!${isRehberlik}) openEdit(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+          ${!isRehberlik ? `<button class="act-btn red" title="Silinmə Sorğusu Göndər" onclick="event.stopPropagation(); openDeleteModal(${e.id})"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
           `}
         </div>
       </div>
@@ -885,7 +887,9 @@ function renderCards(list) {
 function renderTable(list) {
   const tb = document.getElementById('tableBody');
   if (!list.length) { tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:#94A3B8">Məlumat tapılmadı</td></tr>`; return; }
-  tb.innerHTML = list.map(e => `<tr>
+  tb.innerHTML = list.map(e => {
+    const isRehberlik = Number(e.dept_id) === 1 || (e.dept_name && e.dept_name.toLocaleUpperCase('az').includes('RƏHBƏRL'));
+    return `<tr>
     <td><span class="t-avatar" style="background:${departmentGradient(e.dept_name)}">${initials(e.name)}</span>${e.name}</td>
     <td>${e.position_name || '—'}</td>
     <td><span class="dept-chip" style="margin:0">${e.dept_name || '—'}</span></td>
@@ -897,13 +901,16 @@ function renderTable(list) {
     <td style="text-align:right">
       <div class="card-acts" style="justify-content:flex-end">
         <button class="act-btn" onclick="openView(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
-        <button class="act-btn" title="${portalUserRole === 'admin' ? 'Redəktə' : 'Redəktə Sorğusu'}" ${portalUserRole !== 'admin' && Number(e.dept_id) === 1 ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="if (portalUserRole === 'admin' || Number(${e.dept_id}) !== 1) openEdit(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+        <button class="act-btn" title="${portalUserRole === 'admin' ? 'Redəktə' : 'Redəktə Sorğusu'}" ${portalUserRole !== 'admin' && isRehberlik ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} onclick="if (portalUserRole === 'admin' || !${isRehberlik}) openEdit(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
         ${portalUserRole === 'admin' ? `
-        <button class="act-btn red" onclick="deleteEmp(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
-        ` : ''}
+        ${!isRehberlik ? `<button class="act-btn red" title="Sil" onclick="openDeleteModal(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
+        ` : `
+        ${!isRehberlik ? `<button class="act-btn red" title="Silinmə Sorğusu Göndər" onclick="openDeleteModal(${e.id})"><svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
+        `}
       </div>
     </td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }
 
 const ORG_ROLE_LABELS = {
@@ -1375,6 +1382,7 @@ async function setPage(p) {
 
 function openView(id) {
   const e = employees.find(x => String(x.id) === String(id)); if (!e) return;
+  const isRehberlik = Number(e.dept_id) === 1 || (e.dept_name && e.dept_name.toLocaleUpperCase('az').includes('RƏHBƏRL'));
   document.getElementById('viewModalBody').innerHTML = `
     <div class="profile-banner">
       <div class="profile-avatar-lg" style="background:${departmentGradient(e.dept_name)}">${initials(e.name)}</div>
@@ -1399,15 +1407,21 @@ function openView(id) {
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         Redəktə et
       </button>
-      <button class="btn" style="justify-content:center;background:#FEF2F2;color:#EF4444;border:1px solid #FCA5A5;padding:0 18px;font-weight:600" onclick="deleteEmp(${e.id})" title="Bazadan sil">
+      ${!isRehberlik ? `
+      <button class="btn" style="justify-content:center;background:#FEF2F2;color:#EF4444;border:1px solid #FCA5A5;padding:0 18px;font-weight:600" onclick="closeModal('viewModal');openDeleteModal(${e.id})" title="Bazadan sil">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
         Sil
-      </button>
+      </button>` : ''}
       ` : `
-      <button class="btn" style="flex:1;justify-content:center;background:#F0F4FF;color:var(--accent);border:1px solid var(--accent); ${Number(e.dept_id) === 1 ? 'opacity: 0.5; cursor: not-allowed;' : ''}" ${Number(e.dept_id) === 1 ? 'disabled' : ''} onclick="closeModal('viewModal'); if (Number(${e.dept_id}) !== 1) openEdit(${e.id})">
+      <button class="btn" style="flex:1;justify-content:center;background:#F0F4FF;color:var(--accent);border:1px solid var(--accent); ${isRehberlik ? 'opacity: 0.5; cursor: not-allowed;' : ''}" ${isRehberlik ? 'disabled' : ''} onclick="closeModal('viewModal'); if (!${isRehberlik}) openEdit(${e.id})">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-        Redəktə Sorğusu Göndər
+        Redəktə Sorğusu
       </button>
+      ${!isRehberlik ? `
+      <button class="btn" style="justify-content:center;background:#FEF2F2;color:#EF4444;border:1px solid #FCA5A5;padding:0 18px;font-weight:600" onclick="closeModal('viewModal');openDeleteModal(${e.id})" title="Silinmə Sorğusu Göndər">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        Silinmə Sorğusu
+      </button>` : ''}
       `}
     </div>
   `;
@@ -1616,8 +1630,8 @@ async function saveEmployee() {
 
   const enableBtn = () => { if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = ''; } };
 
-  if (!name || !position_id) {
-    showToast('Ad Soyad və Vəzifə məcburidir!', 'error');
+  if (!name || !position_id || !dept_id) {
+    showToast('Ad Soyad, Şöbə və Vəzifə mütləq seçilməlidir!', 'error');
     enableBtn();
     return;
   }
@@ -1675,6 +1689,20 @@ async function saveEmployee() {
 /* ─── USER EDIT REQUEST ─── */
 async function saveEditRequest(newData) {
   try {
+    const oldD = editRequestOriginalData || {};
+    const fieldKeys = ['name', 'position_id', 'dept_id', 'sector_id', 'email', 'intphone', 'mobile', 'room', 'car_plate'];
+
+    const hasAnyChange = fieldKeys.some(k => {
+      const oldVal = (oldD[k] !== undefined && oldD[k] !== null) ? String(oldD[k]).trim() : '';
+      const newVal = (newData[k] !== undefined && newData[k] !== null) ? String(newData[k]).trim() : '';
+      return oldVal !== newVal;
+    });
+
+    if (!hasAnyChange) {
+      showToast('Heç bir məlumatı dəyişmədiniz! Boş sorğu göndərilə bilməz.', 'error');
+      return;
+    }
+
     const payload = {
       employee_id: editingId,
       employee_name: editRequestOriginalData ? editRequestOriginalData.name : '',
@@ -1686,13 +1714,17 @@ async function saveEditRequest(newData) {
     const res = await fetch(`${API_URL}/employee_edit_requests`, {
       method: 'POST', headers: HEADERS, body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Request failed');
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Request failed');
+    }
     showToast('Redəktə sorğunuz adminə göndərildi ✓');
     closeModal('formModal');
     editRequestMode = false;
     editRequestOriginalData = null;
+    await fetchPendingRequestsCount();
   } catch (err) {
-    showToast('Sorğu göndərilərkən xəta baş verdi', 'error');
+    showToast(err.message || 'Sorğu göndərilərkən xəta baş verdi', 'error');
     console.error(err);
   }
 }
@@ -1722,8 +1754,82 @@ async function saveNewEmployeeRequest(data) {
   }
 }
 
-async function deleteEmp(id) {
-  if (!confirm('Bu əməkdaşı bazadan tamamilə silmək istədiyinizə əminsiniz?')) return;
+function openDeleteModal(id) {
+  const emp = employees.find(x => String(x.id) === String(id));
+  if (!emp) return;
+  const isRehberlik = Number(emp.dept_id) === 1 || (emp.dept_name && emp.dept_name.toLocaleUpperCase('az').includes('RƏHBƏRL'));
+  if (isRehberlik) {
+    showToast('Rəhbərlik şöbəsindəki əməkdaşlar silinə bilməz!', 'error');
+    return;
+  }
+
+  document.getElementById('deleteTargetEmpId').value = id;
+  document.getElementById('deleteReasonInput').value = '';
+
+  const isAdmin = portalUserRole === 'admin';
+  document.getElementById('deleteModalTitle').textContent = isAdmin ? 'Əməkdaşı Sil' : 'Silinmə Sorğusu Göndər';
+  document.getElementById('deleteModalDesc').innerHTML = isAdmin
+    ? `<strong>"${emp.name}"</strong> adlı əməkdaşı bazadan tamamilə silmək istəyirsiniz?`
+    : `<strong>"${emp.name}"</strong> adlı əməkdaşın sistemdən silinməsi üçün adminə sorğu göndərmək istəyirsiniz?`;
+
+  const actionBtn = document.getElementById('confirmDeleteActionBtn');
+  actionBtn.textContent = isAdmin ? 'Bəli, Sil' : 'Sorğu Göndər';
+
+  document.getElementById('deleteConfirmModal').classList.add('open');
+}
+
+async function executeDeleteAction() {
+  const id = document.getElementById('deleteTargetEmpId').value;
+  const reason = document.getElementById('deleteReasonInput').value.trim();
+  const btn = document.getElementById('confirmDeleteActionBtn');
+  if (btn) btn.disabled = true;
+
+  try {
+    if (portalUserRole === 'admin') {
+      await deleteEmp(id, reason);
+    } else {
+      await requestDeleteEmp(id, reason);
+    }
+    closeModal('deleteConfirmModal');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function requestDeleteEmp(id, reason = '') {
+  const emp = employees.find(x => String(x.id) === String(id));
+  try {
+    const payload = {
+      employee_id: id,
+      employee_name: emp ? emp.name : '',
+      old_data: emp || {},
+      new_data: { reason: reason },
+      status: 'pending',
+      requested_by: portalUserName,
+      request_type: 'delete'
+    };
+
+    const res = await fetch(`${API_URL}/employee_edit_requests`, {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Request failed');
+    }
+
+    showToast('Əməkdaşın silinməsi üçün sorğunuz adminə göndərildi ✓');
+    closeModal('viewModal');
+    await fetchPendingRequestsCount();
+  } catch (err) {
+    showToast(err.message || 'Silinmə sorğusu göndərilərkən xəta baş verdi', 'error');
+    console.error(err);
+  }
+}
+
+async function deleteEmp(id, reason = '') {
   try {
     const res = await fetch(`${API_URL}/employees/${id}`, { method: 'DELETE', headers: HEADERS });
     if (!res.ok) {
@@ -1743,6 +1849,52 @@ async function deleteEmp(id) {
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+/* ─── CUSTOM ELEGANT CONFIRM MODAL (Replaces browser confirm()) ─── */
+let appConfirmResolve = null;
+
+function showAppConfirm({ title = 'Təsdiq', message = '', okText = 'Bəli, Təsdiqlə', cancelText = 'Ləğv et', type = 'danger' }) {
+  return new Promise((resolve) => {
+    appConfirmResolve = resolve;
+    document.getElementById('appConfirmTitle').textContent = title;
+    document.getElementById('appConfirmMessage').textContent = message;
+
+    const okBtn = document.getElementById('appConfirmOkBtn');
+    okBtn.textContent = okText;
+
+    const iconWrap = document.getElementById('appConfirmIconWrap');
+    const icon = document.getElementById('appConfirmIcon');
+
+    if (type === 'danger') {
+      iconWrap.style.background = 'rgba(239, 68, 68, 0.1)';
+      iconWrap.style.color = '#EF4444';
+      okBtn.style.background = '#EF4444';
+      icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />';
+    } else if (type === 'success') {
+      iconWrap.style.background = 'rgba(16, 185, 129, 0.1)';
+      iconWrap.style.color = 'var(--success)';
+      okBtn.style.background = 'var(--success)';
+      icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />';
+    } else {
+      iconWrap.style.background = 'rgba(79, 70, 229, 0.1)';
+      iconWrap.style.color = 'var(--accent)';
+      okBtn.style.background = 'var(--accent)';
+      icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />';
+    }
+
+    document.getElementById('appConfirmModal').classList.add('open');
+  });
+}
+
+function closeAppConfirm(result) {
+  closeModal('appConfirmModal');
+  if (appConfirmResolve) {
+    appConfirmResolve(result);
+    appConfirmResolve = null;
+  }
+}
+window.closeAppConfirm = closeAppConfirm;
+window.showAppConfirm = showAppConfirm;
 
 function showToast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -1801,6 +1953,7 @@ async function fetchRequestsPageData() {
 
     // Split by request type
     const editRequests = allPending.filter(r => !r.request_type || r.request_type === 'edit');
+    const deleteRequests = allPending.filter(r => r.request_type === 'delete');
     const newEmpRequests = allPending.filter(r => r.request_type === 'new_employee');
 
     const usersRes = await fetch(`${API_URL}/portal_users`, { headers: HEADERS });
@@ -1808,6 +1961,7 @@ async function fetchRequestsPageData() {
     const users = await usersRes.json();
 
     renderEditRequestsTable(editRequests);
+    renderDeleteRequestsTable(deleteRequests);
     renderNewEmployeeRequestsTable(newEmpRequests);
     renderUsersTable(users);
   } catch (err) {
@@ -1872,6 +2026,67 @@ function renderEditRequestsTable(list) {
       </td>
     </tr>`;
   }).join('');
+}
+
+function renderDeleteRequestsTable(list) {
+  const tb = document.getElementById('deleteRequestsTableBody');
+  if (!tb) return;
+  if (!list || !list.length) {
+    tb.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">Gözləyən əməkdaş silinməsi sorğusu yoxdur</td></tr>`;
+    return;
+  }
+
+  const getDeptName = (id) => { const d = domains.departments.find(x => String(x.id) === String(id)); return d ? d.name : '—'; };
+  const getPosName = (id) => { const p = domains.positions.find(x => String(x.id) === String(id)); return p ? p.name : '—'; };
+
+  tb.innerHTML = list.map(req => {
+    const oldD = req.old_data || {};
+    const dateStr = new Date(req.requested_at).toLocaleString('az-AZ');
+    const deptInfo = `${getPosName(oldD.position_id)} / ${getDeptName(oldD.dept_id)}`;
+    const reasonText = (req.new_data && req.new_data.reason) ? req.new_data.reason : '—';
+    return `<tr>
+      <td><strong>${req.employee_name || oldD.name || '—'}</strong></td>
+      <td><span style="display:inline-block;background:#FEF2F2;border:1px solid #FCA5A5;color:#B91C1C;border-radius:5px;padding:2px 7px;font-size:12px;">${deptInfo}</span></td>
+      <td style="max-width:200px;word-break:break-word"><span style="color:${reasonText !== '—' ? '#B91C1C' : '#94A3B8'};font-style:${reasonText !== '—' ? 'normal' : 'italic'}">${reasonText}</span></td>
+      <td>${req.requested_by || '—'}</td>
+      <td style="white-space:nowrap">${dateStr}</td>
+      <td style="text-align:right">
+        <div class="card-acts" style="justify-content:flex-end">
+          <button class="btn" style="padding:6px 12px;font-size:12px;background:#EF4444;color:#fff;border:none" onclick="approveDeleteRequest(${req.id})">Silinməni Təsdiqlə</button>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="rejectEditRequest(${req.id})">Rədd et</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function approveDeleteRequest(reqId) {
+  const ok = await showAppConfirm({
+    title: 'Silinmə Sorğusunu Təsdiqlə',
+    message: 'Bu silinmə sorğusunu təsdiqləmək istəyirsiniz? Əməkdaş bazadan tamamilə silinəcək.',
+    okText: 'Bəli, Təsdiqlə',
+    type: 'danger'
+  });
+  if (!ok) return;
+
+  try {
+    const r = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ status: 'approved', resolved_at: new Date().toISOString() })
+    });
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || 'Approval failed');
+    }
+    showToast('Silinmə sorğusu təsdiqləndi, əməkdaş bazadan silindi ✓');
+    await fetchRequestsPageData();
+    await fetchPendingRequestsCount();
+    await fetchEmployees();
+  } catch (err) {
+    showToast('Təsdiqləyərkən xəta baş verdi', 'error');
+    console.error(err);
+  }
 }
 
 function renderNewEmployeeRequestsTable(list) {
@@ -1942,7 +2157,14 @@ function renderUsersTable(users) {
 }
 
 async function approveNewEmployeeRequest(reqId) {
-  if (!confirm('Bu yeni əməkdaş sorğusunu təsdiqləyirsiniz? Əməkdaş sisteme əlavə ediləcək.')) return;
+  const ok = await showAppConfirm({
+    title: 'Yeni Əməkdaş Əlavəsi',
+    message: 'Bu yeni əməkdaş sorğusunu təsdiqləyirsiniz? Əməkdaş dərhal sistemə əlavə ediləcək.',
+    okText: 'Təsdiq et',
+    type: 'success'
+  });
+  if (!ok) return;
+
   try {
     const r = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
       method: 'PATCH', headers: HEADERS,
@@ -1963,7 +2185,14 @@ async function approveNewEmployeeRequest(reqId) {
 }
 
 async function approveEditRequest(reqId) {
-  if (!confirm('Bu redəktə sorğusunu təsdiqləyirsiniz? Əməkdaş məlumatları yenilənəcək.')) return;
+  const ok = await showAppConfirm({
+    title: 'Redəktə Sorğusunu Təsdiqlə',
+    message: 'Bu redəktə sorğusunu təsdiqləyirsiniz? Əməkdaşın dəyişdirilmiş məlumatları yenilənəcək.',
+    okText: 'Təsdiq et',
+    type: 'success'
+  });
+  if (!ok) return;
+
   try {
     const r = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
       method: 'PATCH', headers: HEADERS, body: JSON.stringify({ status: 'approved', resolved_at: new Date().toISOString() })
@@ -1983,7 +2212,14 @@ async function approveEditRequest(reqId) {
 }
 
 async function rejectEditRequest(reqId) {
-  if (!confirm('Bu sorğunu rədd etmək istəyirsiniz?')) return;
+  const ok = await showAppConfirm({
+    title: 'Sorğunu Rədd Et',
+    message: 'Bu sorğunu rədd etmək istədiyinizə əminsiniz?',
+    okText: 'Bəli, Rədd et',
+    type: 'danger'
+  });
+  if (!ok) return;
+
   try {
     const res = await fetch(`${API_URL}/employee_edit_requests/${reqId}`, {
       method: 'PATCH', headers: HEADERS, body: JSON.stringify({ status: 'rejected', resolved_at: new Date().toISOString() })

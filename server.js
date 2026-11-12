@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const { Pool } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
@@ -8,8 +9,14 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
+app.use(express.static(__dirname));
 app.use('/api/import', express.json({ limit: '5mb' }));
 app.use(express.json());
+
+// Serve portal.html at root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'portal.html'));
+});
 app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'Göndərilən məlumat serverin ölçü limitini keçir. İdxal limiti: 5 MB.' });
@@ -523,16 +530,63 @@ app.get('/api/employee_edit_requests/count', async (req, res) => {
 app.post('/api/employee_edit_requests', async (req, res) => {
   const { employee_id, employee_name, old_data, new_data, status, requested_by, request_type } = req.body;
   try {
+    const type = request_type || 'edit';
+
     if (employee_id) {
       const empRes = await pool.query('SELECT dept_id FROM employees WHERE id = $1', [employee_id]);
       if (empRes.rows.length > 0 && Number(empRes.rows[0].dept_id) === 1) {
-        return res.status(403).json({ error: 'Rəhbərlik şöbəsindəki əməkdaşlar üçün redaktə sorğusu göndərilə bilməz!' });
+        return res.status(403).json({ error: 'Rəhbərlik şöbəsindəki əməkdaşlar üçün sorğu göndərilə bilməz!' });
       }
     }
+
+    // 1. Eyni adam üçün təkrar silinmə sorğusunun qarşısını al
+    if (type === 'delete' && employee_id) {
+      const existingDel = await pool.query(
+        `SELECT id FROM employee_edit_requests WHERE employee_id = $1 AND request_type = 'delete' AND status = 'pending'`,
+        [employee_id]
+      );
+      if (existingDel.rows.length > 0) {
+        return res.status(409).json({ error: 'Bu əməkdaş üçün artıq adminə göndərilmiş gözləyən silinmə sorğusu mövcuddur!' });
+      }
+    }
+
+    // 2. Boş redaktə sorğusu və məcburi sahələr yoxlanışı
+    if (type === 'edit') {
+      const oldD = old_data || {};
+      const newD = new_data || {};
+
+      if (newD.name !== undefined && (!newD.name || !String(newD.name).trim())) {
+        return res.status(400).json({ error: 'Ad Soyad sahəsi boş qoyula bilməz!' });
+      }
+      if (newD.dept_id !== undefined && !newD.dept_id) {
+        return res.status(400).json({ error: 'Şöbə sahəsi mütləq seçilməlidir!' });
+      }
+      if (newD.position_id !== undefined && !newD.position_id) {
+        return res.status(400).json({ error: 'Vəzifə sahəsi mütləq seçilməlidir!' });
+      }
+
+      const fields = ['name', 'position_id', 'dept_id', 'sector_id', 'email', 'intphone', 'mobile', 'room', 'car_plate'];
+      const hasDiff = fields.some(k => {
+        const o = oldD[k] !== undefined && oldD[k] !== null ? String(oldD[k]).trim() : '';
+        const n = newD[k] !== undefined && newD[k] !== null ? String(newD[k]).trim() : '';
+        return o !== n;
+      });
+      if (!hasDiff) {
+        return res.status(400).json({ error: 'Məlumatlarda heç bir dəyişiklik edilməyib. Boş sorğu göndərilə bilməz.' });
+      }
+    }
+
+    if (type === 'new_employee') {
+      const newD = new_data || {};
+      if (!newD.name || !String(newD.name).trim() || !newD.position_id || !newD.dept_id) {
+        return res.status(400).json({ error: 'Yeni əməkdaş üçün Ad Soyad, Şöbə və Vəzifə mütləq daxil edilməlidir.' });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO employee_edit_requests (employee_id, employee_name, old_data, new_data, status, requested_by, request_type)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [employee_id || null, employee_name, JSON.stringify(old_data), JSON.stringify(new_data), 'pending', requested_by, request_type || 'edit']
+      [employee_id || null, employee_name, JSON.stringify(old_data), JSON.stringify(new_data), 'pending', requested_by, type]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -554,7 +608,11 @@ app.patch('/api/employee_edit_requests/:id', async (req, res) => {
     const editReq = reqResult.rows[0];
 
     if (status === 'approved') {
-      if (editReq.request_type === 'new_employee') {
+      if (editReq.request_type === 'delete') {
+        if (editReq.employee_id) {
+          await pool.query('DELETE FROM employees WHERE id = $1', [editReq.employee_id]);
+        }
+      } else if (editReq.request_type === 'new_employee') {
         const d = editReq.new_data || {};
         const normalizedEmail = (d.email && String(d.email).trim()) || null;
         const normalizedMobile = formatMobileNumber(d.mobile);
