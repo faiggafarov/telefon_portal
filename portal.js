@@ -3324,11 +3324,6 @@ function renderDayTimeline(dateStr) {
         </svg>
         <div style="font-weight: 700; color: var(--text); font-size: 14px;">Bu tarixdə iclas yoxdur</div>
         <p style="font-size: 12px; margin-top: 4px;">İclas zalı gün ərzində tamamilə boşdur.</p>
-        ${portalUserRole === 'admin' ? `
-          <button class="btn btn-primary" style="margin-top: 14px; font-size: 12px; padding: 6px 14px; background: #3B82F6; border: none;" onclick="openMeetingModal(null, '${dateStr}')">
-            + Bu günə iclas təyin et
-          </button>
-        ` : ''}
       </div>
     `;
     return;
