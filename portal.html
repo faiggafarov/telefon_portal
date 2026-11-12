@@ -994,20 +994,12 @@
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Başlama Saatı *</label>
-                        <div class="form-cs" id="fcs-mStartTime">
-                            <div class="form-cs-selected" onclick="toggleFormCS('fcs-mStartTime')">10:00</div>
-                            <div class="form-cs-options" id="fcs-mStartTime-opts" style="max-height: 220px;"></div>
-                            <input type="hidden" id="mStartTime" value="10:00" onchange="onStartTimeChange()">
-                        </div>
+                        <input class="form-input" id="mStartTime" type="time" value="10:00" onchange="onStartTimeChange()" required>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Bitmə Saatı *</label>
-                        <div class="form-cs" id="fcs-mEndTime">
-                            <div class="form-cs-selected" onclick="toggleFormCS('fcs-mEndTime')">11:00</div>
-                            <div class="form-cs-options" id="fcs-mEndTime-opts" style="max-height: 220px;"></div>
-                            <input type="hidden" id="mEndTime" value="11:00">
-                        </div>
+                        <input class="form-input" id="mEndTime" type="time" value="11:00" required>
                     </div>
 
                     <!-- Participants Selection Section -->

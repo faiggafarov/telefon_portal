@@ -1671,6 +1671,22 @@ tbody tr:hover td {
     font-family: 'Inter', sans-serif;
 }
 
+input[type="time"].form-input {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+input[type="time"].form-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    filter: invert(30%) sepia(20%) saturate(1500%) hue-rotate(190deg);
+}
+
+input[type="time"].form-input:hover::-webkit-calendar-picker-indicator {
+    opacity: 1;
+}
+
 select.form-input {
     appearance: none;
     -webkit-appearance: none;
