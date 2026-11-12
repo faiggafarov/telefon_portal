@@ -3380,6 +3380,43 @@ function renderDayTimeline(dateStr) {
   }).join('');
 }
 
+function onStartTimeChange() {
+  const startInput = document.getElementById('mStartTime');
+  const endInput = document.getElementById('mEndTime');
+  if (!startInput || !endInput) return;
+
+  const startVal = startInput.value;
+  if (!startVal) return;
+
+  // Set min attribute for end time
+  endInput.min = startVal;
+
+  // If current end time is empty or earlier/equal to start time, auto advance by 1 hour
+  if (!endInput.value || endInput.value <= startVal) {
+    setMeetingDuration(60);
+  }
+}
+
+function setMeetingDuration(minutesToAdd) {
+  const startInput = document.getElementById('mStartTime');
+  const endInput = document.getElementById('mEndTime');
+  if (!startInput || !endInput) return;
+
+  const startVal = startInput.value || '10:00';
+  const parts = startVal.split(':').map(Number);
+  const totalMinutes = parts[0] * 60 + parts[1] + minutesToAdd;
+
+  const endH = Math.floor(totalMinutes / 60) % 24;
+  const endM = totalMinutes % 60;
+
+  const endVal = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+  endInput.value = endVal;
+  endInput.min = startVal;
+}
+
+window.onStartTimeChange = onStartTimeChange;
+window.setMeetingDuration = setMeetingDuration;
+
 function openMeetingModal(meetingId = null, presetDate = null) {
   if (portalUserRole !== 'admin') {
     showToast('İclas təyin etmək yalnız admin səlahiyyətindədir', 'error');
@@ -3414,6 +3451,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('mDate').value = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
     document.getElementById('mStartTime').value = m.start_time.slice(0, 5);
     document.getElementById('mEndTime').value = m.end_time.slice(0, 5);
+    document.getElementById('mEndTime').min = m.start_time.slice(0, 5);
     document.getElementById('mDescription').value = m.description || '';
     currentSelectedParticipants = Array.isArray(m.participants) ? [...m.participants] : [];
     if (delBtn) delBtn.style.display = 'inline-flex';
@@ -3428,6 +3466,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('mDate').value = initialDate;
     document.getElementById('mStartTime').value = '10:00';
     document.getElementById('mEndTime').value = '11:00';
+    document.getElementById('mEndTime').min = '10:00';
     document.getElementById('mDescription').value = '';
     currentSelectedParticipants = [];
     if (delBtn) delBtn.style.display = 'none';
