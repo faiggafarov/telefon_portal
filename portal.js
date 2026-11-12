@@ -217,6 +217,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchDomains();
   await fetchEmployees();
   initIosWheelItems();
+
+  const returnPage = sessionStorage.getItem('portalReturnPage');
+  if (returnPage) {
+    sessionStorage.removeItem('portalReturnPage');
+    if (returnPage !== 'directory' && typeof setPage === 'function') {
+      setPage(returnPage);
+    }
+  }
 });
 
 async function logout() {
@@ -365,6 +373,7 @@ async function submitAdminLogin(event) {
       localStorage.setItem('portalToken', data.token);
       localStorage.setItem('portalName', data.username);
       localStorage.setItem('portalUserId', String(data.id));
+      sessionStorage.setItem('portalReturnPage', currentPage || 'directory');
       input.value = '';
       window.location.reload();
     } else {
