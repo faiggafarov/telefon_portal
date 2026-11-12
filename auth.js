@@ -40,7 +40,14 @@ function createAuth(pool, { now = Date.now } = {}) {
       const user = result.rows[0];
       if (!user) { sessions.delete(key); return res.status(401).json({ error: 'Sessiya etibarsızdır.' }); }
       const memberRoute = ['/auth/me', '/auth/logout'].includes(req.path);
-      if (user.role !== 'admin' && !memberRoute) return res.status(403).json({ error: 'Bu əməliyyat yalnız admin üçün açıqdır.' });
+      const isMeetingRoute = req.path === '/meetings' || req.path.startsWith('/meetings/');
+      if (user.role === 'meeting_admin') {
+        if (!memberRoute && !isMeetingRoute) {
+          return res.status(403).json({ error: 'Bu əməliyyat üçün səlahiyyətiniz yoxdur.' });
+        }
+      } else if (user.role !== 'admin' && !memberRoute) {
+        return res.status(403).json({ error: 'Bu əməliyyat yalnız admin üçün açıqdır.' });
+      }
       req.authUser = user;
       req.sessionKey = key;
       next();

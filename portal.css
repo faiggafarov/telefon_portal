@@ -4353,12 +4353,14 @@ html { scrollbar-gutter: stable; }
 [data-header-admin], [data-header-user] { display: none !important; }
 html[data-header-role="admin"] [data-header-admin] { display: flex !important; }
 html[data-header-role="admin"] [data-header-user],
-html[data-header-role="admin"] #adminLoginBtn { display: none !important; }
-html[data-header-role="user"] [data-header-user],
-html:not([data-header-role="admin"]) #adminLoginBtn { display: inline-flex !important; }
-html[data-header-role="user"] [data-header-admin],
-html:not([data-header-role="admin"]) [data-header-admin],
-html:not([data-header-role="admin"]) #userCard { display: none !important; }
+html[data-header-role="admin"] #adminLoginBtn,
+html[data-header-role="meeting_admin"] #adminLoginBtn { display: none !important; }
+html[data-header-role="user"] [data-header-user] { display: flex !important; }
+html[data-header-role="user"] #adminLoginBtn { display: inline-flex !important; }
+html[data-header-role="meeting_admin"] [data-header-admin] { display: none !important; }
+html[data-header-role="meeting_admin"] #userCard { display: inline-flex !important; }
+html[data-header-role="admin"] #userCard { display: inline-flex !important; }
+html[data-header-role="user"] #userCard { display: none !important; }
 @supports not (scrollbar-gutter: stable) { html { overflow-y: scroll; } }
 
 /* ─── MEETING ROOM STYLES & MOBILE RESPONSIVENESS ─── */

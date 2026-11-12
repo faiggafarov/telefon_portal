@@ -890,6 +890,62 @@ app.get('/api/portal_users', async (req, res) => {
   }
 });
 
+// Create portal user (e.g. meeting_admin)
+app.post('/api/portal_users', async (req, res) => {
+  const { username, password, email, role } = req.body;
+  if (!username || typeof username !== 'string' || !username.trim()) {
+    return res.status(400).json({ error: 'İstifadəçi adı daxil edilməlidir.' });
+  }
+  if (!password || typeof password !== 'string' || !password.trim()) {
+    return res.status(400).json({ error: 'Şifrə daxil edilməlidir.' });
+  }
+
+  const assignedRole = role === 'admin' ? 'admin' : 'meeting_admin';
+
+  try {
+    // Check if username already exists
+    const existing = await pool.query('SELECT id FROM portal_users WHERE LOWER(username) = LOWER($1)', [username.trim()]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Bu istifadəçi adı artıq mövcuddur.' });
+    }
+
+    const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+
+    const result = await pool.query(
+      `INSERT INTO portal_users (username, password, email, role, is_active)
+       VALUES ($1, $2, $3, $4, true)
+       RETURNING id, username, email, role, is_active, created_at`,
+      [username.trim(), hashedPassword, (email && email.trim()) || null, assignedRole]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create portal user error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Delete portal user
+app.delete('/api/portal_users/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Prevent deleting the main Admin account (id 2 or username 'Admin')
+    const check = await pool.query('SELECT id, username, role FROM portal_users WHERE id = $1', [id]);
+    if (check.rows.length === 0) return res.status(404).json({ error: 'İstifadəçi tapılmadı' });
+    if (check.rows[0].username.toLowerCase() === 'admin') {
+      return res.status(400).json({ error: 'Əsas Admin hesabını silmək olmaz!' });
+    }
+
+    await pool.query('DELETE FROM portal_users WHERE id = $1', [id]);
+    auth.revokeUser(id);
+    res.json({ success: true, message: 'İstifadəçi uğurla silindi' });
+  } catch (err) {
+    console.error('Delete portal user error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 // Update user password
 app.patch('/api/portal_users/:id', async (req, res) => {
   const { id } = req.params;

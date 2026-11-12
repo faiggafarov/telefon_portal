@@ -149,29 +149,37 @@ window.formatMobilePhone = formatMobilePhone;
 
 function syncAuthHeader() {
   const isAdmin = portalUserRole === 'admin';
-  document.documentElement.dataset.headerRole = isAdmin ? 'admin' : 'user';
+  const isMeetingAdmin = portalUserRole === 'meeting_admin';
+  const isLoggedIn = isAdmin || isMeetingAdmin;
+
+  document.documentElement.dataset.headerRole = isAdmin ? 'admin' : (isMeetingAdmin ? 'meeting_admin' : 'user');
   const loginBtn = document.getElementById('adminLoginBtn');
   const userCard = document.getElementById('userCard');
   const adminDropdown = document.getElementById('adminNavDropdown');
+  const userBadgeName = document.getElementById('userBadgeName');
+
   if (loginBtn) {
-    if (isAdmin) {
+    if (isLoggedIn) {
       loginBtn.style.setProperty('display', 'none', 'important');
     } else {
       loginBtn.style.removeProperty('display');
     }
   }
   if (userCard) {
-    if (!isAdmin) {
-      userCard.style.setProperty('display', 'none', 'important');
+    if (isLoggedIn) {
+      userCard.style.setProperty('display', 'inline-flex', 'important');
+      if (userBadgeName) {
+        userBadgeName.textContent = portalUserName || (isAdmin ? 'Admin' : 'İclas İdarəçisi');
+      }
     } else {
-      userCard.style.removeProperty('display');
+      userCard.style.setProperty('display', 'none', 'important');
     }
   }
   if (adminDropdown) {
-    if (!isAdmin) {
-      adminDropdown.style.setProperty('display', 'none', 'important');
-    } else {
+    if (isAdmin) {
       adminDropdown.style.removeProperty('display');
+    } else {
+      adminDropdown.style.setProperty('display', 'none', 'important');
     }
   }
 }
@@ -180,7 +188,7 @@ syncAuthHeader();
 
 document.addEventListener('DOMContentLoaded', async () => {
   syncAuthHeader();
-  if (portalUserRole === 'admin') {
+  if (portalUserRole === 'admin' || portalUserRole === 'meeting_admin') {
     try {
       const response = await fetch(`${API_URL}/auth/me`, { headers: HEADERS });
       if (!response.ok) {
@@ -194,7 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (error) {
       portalUserRole = 'user';
       syncAuthHeader();
-      showToast('Admin sessiyasını yoxlamaq mümkün olmadı. Səhifəni yeniləyin.', 'error');
+      showToast('Sessiyanı yoxlamaq mümkün olmadı. Səhifəni yeniləyin.', 'error');
     }
   }
   if (portalUserRole === 'admin') {
@@ -274,6 +282,8 @@ function promptAdminLogin() {
   adminLoginReturnFocus = document.activeElement;
   document.getElementById('adminLoginForm').reset();
   clearAdminLoginError();
+  const usernameInput = document.getElementById('adminLoginUsername');
+  if (usernameInput) usernameInput.value = '';
   const input = document.getElementById('adminLoginPassword');
   input.type = 'password';
   const toggle = document.getElementById('adminLoginToggle');
@@ -283,7 +293,11 @@ function promptAdminLogin() {
   adminLoginPreviousOverflow = document.body.style.overflow;
   document.body.style.overflow = 'hidden';
   dialog.showModal();
-  input.focus();
+  if (usernameInput) {
+    usernameInput.focus();
+  } else {
+    input.focus();
+  }
 }
 
 function closeAdminLogin() {
@@ -2166,17 +2180,37 @@ function renderUsersTable(users) {
     tb.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted)">İstifadəçi tapılmadı</td></tr>`;
     return;
   }
-  tb.innerHTML = users.map(u => `<tr>
-    <td><strong>${u.username}</strong></td>
-    <td>${u.email || '—'}</td>
-    <td><span class="dept-chip" style="margin:0;background:${u.role === 'admin' ? 'rgba(79,70,229,0.1)' : 'rgba(16,185,129,0.1)'};color:${u.role === 'admin' ? 'var(--accent)' : 'var(--success)'}">${u.role === 'admin' ? 'Admin' : 'İstifadəçi'}</span></td>
-    <td style="letter-spacing:2px;color:var(--text-muted)">••••••••</td>
-    <td style="text-align:right">
-      <button class="act-btn" style="display:inline-flex" onclick="openDirectPassModal(${u.id}, '${u.username}')" title="Şifrəni Dəyiş">
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1m0 0a2 2 0 114 0m-4 0v5"/></svg>
-      </button>
-    </td>
-  </tr>`).join('');
+  tb.innerHTML = users.map(u => {
+    let roleBadge = '';
+    if (u.role === 'admin') {
+      roleBadge = '<span class="dept-chip" style="margin:0;background:rgba(79,70,229,0.1);color:var(--accent);">Admin (Tam Hüquq)</span>';
+    } else if (u.role === 'meeting_admin') {
+      roleBadge = '<span class="dept-chip" style="margin:0;background:rgba(59,130,246,0.1);color:#1D4ED8;">İclas İdarəçisi</span>';
+    } else {
+      roleBadge = '<span class="dept-chip" style="margin:0;background:rgba(16,185,129,0.1);color:var(--success);">İstifadəçi</span>';
+    }
+
+    const isMainAdmin = u.username.toLowerCase() === 'admin';
+
+    return `<tr>
+      <td><strong>${u.username}</strong></td>
+      <td>${u.email || '—'}</td>
+      <td>${roleBadge}</td>
+      <td style="letter-spacing:2px;color:var(--text-muted)">••••••••</td>
+      <td style="text-align:right">
+        <div style="display: inline-flex; gap: 4px; justify-content: flex-end;">
+          <button class="act-btn" style="display:inline-flex" onclick="openDirectPassModal(${u.id}, '${u.username}')" title="Şifrəni Dəyiş">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1m0 0a2 2 0 114 0m-4 0v5"/></svg>
+          </button>
+          ${!isMainAdmin ? `
+            <button class="act-btn red" style="display:inline-flex" onclick="deletePortalUser(${u.id}, '${u.username}')" title="İstifadəçini Sil">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          ` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 async function approveNewEmployeeRequest(reqId) {
@@ -2281,6 +2315,127 @@ async function saveDirectPassword() {
     console.error(err);
   }
 }
+
+function openAddPortalUserModal() {
+  const modal = document.getElementById('addPortalUserModal');
+  if (!modal) return;
+
+  // Populate employees dropdown
+  const empOpts = (employees || [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'az'))
+    .map(e => ({ val: String(e.id), text: `${e.name} (${getDeptName(e.dept_id) || 'Şöbəsiz'})` }));
+
+  populateFormCS('fcs-pUserEmp', empOpts, 'Əməkdaş seçin...', true);
+  setFormCS('fcs-pUserEmp', '', 'Əməkdaş seçin...');
+
+  document.getElementById('pUserEmpId').value = '';
+  document.getElementById('pUsername').value = '';
+  document.getElementById('pUserEmail').value = '';
+  document.getElementById('pUserPassword').value = '';
+  document.getElementById('pUserRole').value = 'meeting_admin';
+
+  modal.classList.add('open');
+}
+
+function onSelectPortalUserEmp() {
+  const empId = document.getElementById('pUserEmpId').value;
+  if (!empId) return;
+
+  const emp = (employees || []).find(e => String(e.id) === String(empId));
+  if (emp) {
+    const nameInput = document.getElementById('pUsername');
+    const emailInput = document.getElementById('pUserEmail');
+    if (nameInput) nameInput.value = emp.name;
+    if (emailInput) emailInput.value = emp.email || '';
+    if (!document.getElementById('pUserPassword').value) {
+      generateRandomUserPass();
+    }
+  }
+}
+
+function generateRandomUserPass() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let pass = '';
+  for (let i = 0; i < 6; i++) {
+    pass += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  document.getElementById('pUserPassword').value = pass;
+}
+
+async function savePortalUser() {
+  const username = (document.getElementById('pUsername').value || '').trim();
+  const email = (document.getElementById('pUserEmail').value || '').trim();
+  const password = (document.getElementById('pUserPassword').value || '').trim();
+  const role = document.getElementById('pUserRole').value || 'meeting_admin';
+  const saveBtn = document.getElementById('btnSavePortalUser');
+
+  if (!username) {
+    showToast('İstifadəçi adı daxil edilməlidir!', 'error');
+    return;
+  }
+  if (!password) {
+    showToast('Şifrə daxil edilməlidir!', 'error');
+    return;
+  }
+
+  if (saveBtn) saveBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_URL}/portal_users`, {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify({ username, email, password, role })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'İstifadəçi əlavə edilərkən xəta baş verdi');
+    }
+
+    showToast(`"${username}" adlı səlahiyyətli uğurla təyin edildi ✓`);
+    closeModal('addPortalUserModal');
+    await fetchRequestsPageData();
+  } catch (err) {
+    showToast(err.message || 'Xəta baş verdi', 'error');
+    console.error(err);
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+async function deletePortalUser(id, username) {
+  const ok = await showAppConfirm({
+    title: 'Səlahiyyətlini Sil',
+    message: `<strong>"${username}"</strong> adlı istifadəçinin sistemə və iclas idarəçiliyinə giriş icazəsini ləğv etmək istəyirsiniz?`,
+    okText: 'Bəli, Sil',
+    type: 'danger'
+  });
+  if (!ok) return;
+
+  try {
+    const res = await fetch(`${API_URL}/portal_users/${id}`, {
+      method: 'DELETE',
+      headers: HEADERS
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Silinmə uğursuz oldu');
+    }
+
+    showToast(`"${username}" adlı istifadəçi uğurla silindi ✓`);
+    await fetchRequestsPageData();
+  } catch (err) {
+    showToast(err.message || 'Silinərkən xəta baş verdi', 'error');
+    console.error(err);
+  }
+}
+
+window.openAddPortalUserModal = openAddPortalUserModal;
+window.onSelectPortalUserEmp = onSelectPortalUserEmp;
+window.generateRandomUserPass = generateRandomUserPass;
+window.savePortalUser = savePortalUser;
+window.deletePortalUser = deletePortalUser;
 
 /* ─── DOMAIN MANAGEMENT SYSTEM (ADMIN PANEL) ─── */
 
@@ -3043,9 +3198,10 @@ let selectedMeetingDateStr = new Date().toISOString().split('T')[0];
 let currentMonthMeetings = [];
 
 async function initMeetingsPage() {
+  const canManageMeetings = portalUserRole === 'admin' || portalUserRole === 'meeting_admin';
   const btn = document.getElementById('btnOpenMeetingModal');
   if (btn) {
-    btn.style.display = portalUserRole === 'admin' ? 'inline-flex' : 'none';
+    btn.style.display = canManageMeetings ? 'inline-flex' : 'none';
   }
   populateMeetingDepts();
   await loadMeetingsForMonth(currentMeetingDate.getFullYear(), currentMeetingDate.getMonth() + 1);
@@ -3377,7 +3533,7 @@ function renderDayTimeline(dateStr) {
             </span>
             ${statusBadge}
           </div>
-          ${portalUserRole === 'admin' ? `
+          ${(portalUserRole === 'admin' || portalUserRole === 'meeting_admin') ? `
             <div style="display: flex; gap: 4px; flex-shrink: 0;">
               <button class="act-btn" title="Redaktə et" style="width: 26px; height: 26px;" onclick="openMeetingModal(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
@@ -3438,8 +3594,9 @@ function onStartTimeChange() {
 window.onStartTimeChange = onStartTimeChange;
 
 function openMeetingModal(meetingId = null, presetDate = null) {
-  if (portalUserRole !== 'admin') {
-    showToast('İclas təyin etmək yalnız admin səlahiyyətindədir', 'error');
+  const canManageMeetings = portalUserRole === 'admin' || portalUserRole === 'meeting_admin';
+  if (!canManageMeetings) {
+    showToast('İclas təyin etmək üçün səlahiyyətiniz yoxdur', 'error');
     return;
   }
 

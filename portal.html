@@ -11,7 +11,8 @@
     <script>
         // Set header visibility before the browser renders the page.
         try {
-            document.documentElement.dataset.headerRole = localStorage.getItem('portalRole') === 'admin' ? 'admin' : 'user';
+            const r = localStorage.getItem('portalRole');
+            document.documentElement.dataset.headerRole = (r === 'admin' || r === 'meeting_admin') ? r : 'user';
         } catch (_) {
             document.documentElement.dataset.headerRole = 'user';
         }
@@ -119,9 +120,13 @@
                     </svg>
                     <span>Yeni Əməkdaş</span>
                 </button>
-                <div class="topbar-user" id="userCard" data-header-admin>
+                <div class="topbar-user" id="userCard" style="display: none; align-items: center; gap: 8px;">
+                    <div id="userBadgeRole" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 12px; font-weight: 600; color: #1D4ED8;">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                        <span id="userBadgeName">Admin</span>
+                    </div>
                     <button class="logout-btn" onclick="event.stopPropagation(); logout()" title="Çıxış"
-                        style="margin-left:4px;">
+                        style="margin-left:2px;">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                 d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -561,8 +566,17 @@
             </div>
 
             <div class="table-wrap active">
-                <div class="modal-head" style="border-bottom: 1px solid var(--border); background: #F8FAFF;">
-                    <h2 style="font-size: 15px; font-weight: 800;">Sistem İstifadəçiləri (Şifrə yeniləmə)</h2>
+                <div class="modal-head" style="border-bottom: 1px solid var(--border); background: #F8FAFF; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        <h2 style="font-size: 15px; font-weight: 800; margin: 0;">Sistem və İclas Səlahiyyətliləri</h2>
+                        <span style="font-size: 12px; color: var(--text-muted);">İclas otağında iclas təyin etmək hüququ olan istifadəçilər</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="openAddPortalUserModal()" style="padding: 7px 14px; font-size: 12px; height: 32px; display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Yeni Səlahiyyətli Təyin Et
+                    </button>
                 </div>
                 <div class="table-scroll">
                     <table>
@@ -570,9 +584,9 @@
                             <tr>
                                 <th>İstifadəçi Adı</th>
                                 <th>Email</th>
-                                <th>Rol</th>
+                                <th>Rol / Səlahiyyət</th>
                                 <th>Şifrə</th>
-                                <th style="text-align:right">Düzəliş</th>
+                                <th style="text-align:right">Əməliyyat</th>
                             </tr>
                         </thead>
                         <tbody id="usersTableBody"></tbody>
@@ -1321,6 +1335,67 @@
         </div>
     </div>
 
+    <!-- ADD PORTAL USER MODAL -->
+    <div class="overlay" id="addPortalUserModal">
+        <div class="modal" style="width: 520px; max-width: 95vw;" onclick="event.stopPropagation()">
+            <div class="modal-head">
+                <h2 style="display: flex; align-items: center; gap: 8px;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" style="color: var(--accent);">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                    </svg>
+                    Yeni İclas Səlahiyyətlisi Təyin Et
+                </h2>
+                <button class="modal-x" onclick="closeModal('addPortalUserModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px;">
+                <div class="form-grid" style="grid-template-columns: 1fr; gap: 14px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Əməkdaşlar Siyahısından Seçin (İxtiyari)</label>
+                        <div class="form-cs" id="fcs-pUserEmp">
+                            <div class="form-cs-selected placeholder" onclick="toggleFormCS('fcs-pUserEmp')">Əməkdaş seçin...</div>
+                            <div class="form-cs-options" id="fcs-pUserEmp-opts" style="max-height: 220px; width: 100%;"></div>
+                            <input type="hidden" id="pUserEmpId" onchange="onSelectPortalUserEmp()">
+                        </div>
+                        <span style="font-size: 11px; color: var(--text-muted); margin-top: 4px; display: block;">Əməkdaşı seçdikdə adı və emaili avtomatik doldurulacaq</span>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">İstifadəçi Adı (Giriş üçün) *</label>
+                        <input class="form-input" id="pUsername" type="text" placeholder="Məs. Əli Məmmədov və ya ali.m" required>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Email (Bildirişlər üçün)</label>
+                        <input class="form-input" id="pUserEmail" type="email" placeholder="ad@domain.az">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Giriş Şifrəsi *</label>
+                        <div style="display: flex; gap: 6px;">
+                            <input class="form-input" id="pUserPassword" type="text" placeholder="Şifrə təyin edin..." required>
+                            <button type="button" class="btn btn-ghost" onclick="generateRandomUserPass()" style="white-space: nowrap; font-size: 12px; padding: 0 12px;" title="Təsadüfi şifrə yarat">
+                                Təsadüfi
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Səlahiyyət Rolu</label>
+                        <select class="form-input" id="pUserRole" style="cursor: pointer; background: #F8FAFC;">
+                            <option value="meeting_admin" selected>İclas Otağı İdarəçisi (Yalnız İclas Təyini)</option>
+                            <option value="admin">Tam Admin (Bütün Hüquqlar)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 14px 22px;">
+                <button class="btn btn-ghost" onclick="closeModal('addPortalUserModal')">Ləğv et</button>
+                <button class="btn btn-primary" id="btnSavePortalUser" onclick="savePortalUser()">Təyin Et</button>
+            </div>
+        </div>
+    </div>
+
     <!-- TOAST -->
     <div class="toast" id="toast">
         <div class="toast-dot"><svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1404,23 +1479,29 @@
                     <path d="M12 14v3" />
                 </svg></div>
             <span class="admin-login-eyebrow">İDARƏETMƏ PANELİ</span>
-            <h2 id="adminLoginTitle">Admin girişi</h2>
-            <p id="adminLoginDescription">Daxil olmaq üçün şifrənizi yazın.</p>
+            <h2 id="adminLoginTitle">Sistem Girişi</h2>
+            <p id="adminLoginDescription">Admin və ya İclas təyinatı üçün daxil olun.</p>
             <form id="adminLoginForm" onsubmit="submitAdminLogin(event)">
-                <input id="adminLoginUsername" type="hidden" name="username" value="Admin">
-                <label for="adminLoginPassword">Şifrə</label>
-                <div class="admin-login-password">
-                    <input id="adminLoginPassword" name="password" type="password" autocomplete="current-password"
-                        placeholder="Şifrənizi daxil edin" required autofocus aria-describedby="adminLoginError"
-                        oninput="clearAdminLoginError()">
-                    <button type="button" id="adminLoginToggle" onclick="toggleAdminPassword()"
-                        aria-label="Şifrəni göstər" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
-                            stroke-linejoin="round" aria-hidden="true">
-                            <path
-                                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                            <line x1="1" y1="1" x2="23" y2="23" />
-                        </svg></button>
+                <div style="margin-bottom: 12px; text-align: left;">
+                    <label for="adminLoginUsername" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text);">İstifadəçi Adı</label>
+                    <input id="adminLoginUsername" type="text" name="username" value="" placeholder="Admin və ya Ad Soyad" required
+                        class="form-input" style="width: 100%; border-radius: 8px;" autofocus>
+                </div>
+                <div style="margin-bottom: 14px; text-align: left;">
+                    <label for="adminLoginPassword" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text);">Şifrə</label>
+                    <div class="admin-login-password">
+                        <input id="adminLoginPassword" name="password" type="password" autocomplete="current-password"
+                            placeholder="Şifrənizi daxil edin" required aria-describedby="adminLoginError"
+                            oninput="clearAdminLoginError()">
+                        <button type="button" id="adminLoginToggle" onclick="toggleAdminPassword()"
+                            aria-label="Şifrəni göstər" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <path
+                                    d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                                <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg></button>
+                    </div>
                 </div>
                 <p id="adminLoginError" class="admin-login-error" role="alert" hidden></p>
                 <button type="submit" id="adminLoginSubmit" class="admin-login-submit"><span>Daxil ol</span><span
