@@ -3115,59 +3115,54 @@ function renderMeetingCalendar() {
 
   let html = '';
 
-  // Previous month trailing days
-  const prevMonthLastDay = new Date(year, month, 0).getDate();
-  for (let i = startDayOfWeek - 1; i >= 0; i--) {
-    const dayNum = prevMonthLastDay - i;
-    html += `<div style="min-height: 80px; padding: 8px; border-radius: 10px; background: #F8FAFC; opacity: 0.45; border: 1px dashed #E2E8F0; font-size: 12px; color: #94A3B8;">${dayNum}</div>`;
-  }
-
-  // Current month days
-  for (let day = 1; day <= totalDays; day++) {
-    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const dayMeetings = currentMonthMeetings.filter(m => {
-      const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-      return mDate === dStr;
-    });
-
-    const isToday = dStr === todayStr;
-    const isSelected = dStr === selectedMeetingDateStr;
-
-    let borderStyle = '1px solid #E2E8F0';
-    let bgStyle = '#FFFFFF';
-    if (isSelected) {
-      borderStyle = '2px solid #3B82F6';
-      bgStyle = '#EFF6FF';
-    } else if (isToday) {
-      borderStyle = '2px solid #10B981';
-      bgStyle = '#F0FDF4';
+    // Previous month trailing days
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+    for (let i = startDayOfWeek - 1; i >= 0; i--) {
+      const dayNum = prevMonthLastDay - i;
+      html += `<div class="calendar-day-cell other-month">${dayNum}</div>`;
     }
 
-    html += `
-      <div onclick="selectMeetingDate('${dStr}')" style="min-height: 84px; padding: 8px; border-radius: 12px; background: ${bgStyle}; border: ${borderStyle}; cursor: pointer; transition: all 0.15s ease; display: flex; flex-direction: column; justify-content: space-between;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 13px; font-weight: ${isToday || isSelected ? '800' : '600'}; color: ${isSelected ? '#2563EB' : (isToday ? '#059669' : 'var(--text)')};">${day}</span>
-          ${isToday ? `<span style="font-size: 9px; font-weight: 800; background: #10B981; color: #fff; padding: 1px 5px; border-radius: 4px;">BU GÜN</span>` : ''}
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 4px; margin-top: 6px;">
-          ${dayMeetings.slice(0, 2).map(m => `
-            <div style="font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.12); color: #1D4ED8; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${m.title} (${m.start_time.slice(0,5)} - ${m.end_time.slice(0,5)})">
-              ${m.start_time.slice(0,5)} ${m.title}
-            </div>
-          `).join('')}
-          ${dayMeetings.length > 2 ? `<div style="font-size: 10px; color: #64748B; font-weight: 700;">+${dayMeetings.length - 2} daha</div>` : ''}
-        </div>
-      </div>
-    `;
-  }
+    // Current month days
+    for (let day = 1; day <= totalDays; day++) {
+      const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayMeetings = currentMonthMeetings.filter(m => {
+        const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
+        return mDate === dStr;
+      });
 
-  // Next month leading days to complete grid (multiples of 7)
-  const remainingCells = 7 - ((startDayOfWeek + totalDays) % 7);
-  if (remainingCells < 7) {
-    for (let day = 1; day <= remainingCells; day++) {
-      html += `<div style="min-height: 80px; padding: 8px; border-radius: 10px; background: #F8FAFC; opacity: 0.45; border: 1px dashed #E2E8F0; font-size: 12px; color: #94A3B8;">${day}</div>`;
+      const isToday = dStr === todayStr;
+      const isSelected = dStr === selectedMeetingDateStr;
+
+      let cellClass = 'calendar-day-cell current-month';
+      if (isSelected) cellClass += ' selected';
+      if (isToday) cellClass += ' today';
+
+      html += `
+        <div onclick="selectMeetingDate('${dStr}')" class="${cellClass}">
+          <div class="calendar-day-top">
+            <span class="calendar-day-number">${day}</span>
+            ${isToday ? `<span class="calendar-today-badge">BU GÜN</span>` : ''}
+            ${dayMeetings.length > 0 ? `<span class="calendar-mobile-dot" title="${dayMeetings.length} iclas"></span>` : ''}
+          </div>
+          <div class="calendar-events-preview">
+            ${dayMeetings.slice(0, 2).map(m => `
+              <div class="calendar-event-pill" title="${m.title} (${m.start_time.slice(0,5)} - ${m.end_time.slice(0,5)})">
+                ${m.start_time.slice(0,5)} ${m.title}
+              </div>
+            `).join('')}
+            ${dayMeetings.length > 2 ? `<div class="calendar-event-more">+${dayMeetings.length - 2} daha</div>` : ''}
+          </div>
+        </div>
+      `;
     }
-  }
+
+    // Next month leading days to complete grid (multiples of 7)
+    const remainingCells = 7 - ((startDayOfWeek + totalDays) % 7);
+    if (remainingCells < 7) {
+      for (let day = 1; day <= remainingCells; day++) {
+        html += `<div class="calendar-day-cell other-month">${day}</div>`;
+      }
+    }
 
   grid.innerHTML = html;
 }

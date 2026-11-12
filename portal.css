@@ -4361,10 +4361,270 @@ html:not([data-header-role="admin"]) [data-header-admin],
 html:not([data-header-role="admin"]) #userCard { display: none !important; }
 @supports not (scrollbar-gutter: stable) { html { overflow-y: scroll; } }
 
-/* ─── MEETING ROOM RESPONSIVE LAYOUT & ANIMATION ─── */
+/* ─── MEETING ROOM STYLES & MOBILE RESPONSIVENESS ─── */
+.calendar-day-cell {
+    min-height: 84px;
+    padding: 8px;
+    border-radius: 12px;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.calendar-day-cell:hover {
+    border-color: #94A3B8;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+
+.calendar-day-cell.other-month {
+    min-height: 84px;
+    background: #F8FAFC;
+    opacity: 0.45;
+    border: 1px dashed #E2E8F0;
+    font-size: 12px;
+    color: #94A3B8;
+    cursor: default;
+}
+
+.calendar-day-cell.selected {
+    border: 2px solid #3B82F6 !important;
+    background: #EFF6FF !important;
+}
+
+.calendar-day-cell.today {
+    border: 2px solid #10B981;
+    background: #F0FDF4;
+}
+
+.calendar-day-cell.today.selected {
+    border: 2px solid #3B82F6 !important;
+    background: #EFF6FF !important;
+}
+
+.calendar-day-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.calendar-day-number {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.calendar-day-cell.selected .calendar-day-number {
+    color: #2563EB;
+    font-weight: 800;
+}
+
+.calendar-day-cell.today .calendar-day-number {
+    color: #059669;
+    font-weight: 800;
+}
+
+.calendar-today-badge {
+    font-size: 9px;
+    font-weight: 800;
+    background: #10B981;
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+.calendar-mobile-dot {
+    display: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3B82F6;
+    margin-left: auto;
+}
+
+.calendar-events-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.calendar-event-pill {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.12);
+    color: #1D4ED8;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calendar-event-more {
+    font-size: 10px;
+    color: #64748B;
+    font-weight: 700;
+}
+
+/* Tablet & Mobile Responsiveness */
 @media (max-width: 992px) {
     .meetings-grid-layout {
         grid-template-columns: 1fr !important;
+        gap: 20px !important;
+    }
+}
+
+@media (max-width: 680px) {
+    .meetings-container {
+        padding: 10px 0 !important;
+    }
+
+    .meeting-header {
+        padding: 18px 16px !important;
+        border-radius: 14px !important;
+        margin-bottom: 16px !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 14px !important;
+    }
+
+    .meeting-header h1 {
+        font-size: 18px !important;
+    }
+
+    .meeting-header p {
+        font-size: 12px !important;
+    }
+
+    .meeting-header button {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+
+    .meeting-card-box {
+        padding: 16px 12px !important;
+        border-radius: 14px !important;
+    }
+
+    .meeting-card-box-header {
+        margin-bottom: 14px !important;
+    }
+
+    .meeting-card-box-header h2 {
+        font-size: 16px !important;
+    }
+
+    .meeting-month-actions .btn {
+        padding: 5px 8px !important;
+        font-size: 11px !important;
+    }
+
+    .meeting-days-header {
+        font-size: 11px !important;
+        margin-bottom: 6px !important;
+    }
+
+    #meetingCalendarGrid {
+        gap: 4px !important;
+    }
+
+    .calendar-day-cell {
+        min-height: 52px !important;
+        padding: 4px 3px !important;
+        border-radius: 8px !important;
+    }
+
+    .calendar-day-cell.other-month {
+        min-height: 52px !important;
+        padding: 4px 3px !important;
+        border-radius: 8px !important;
+        font-size: 11px !important;
+    }
+
+    .calendar-day-number {
+        font-size: 11px !important;
+    }
+
+    .calendar-today-badge {
+        display: none !important;
+    }
+
+    .calendar-mobile-dot {
+        display: inline-block !important;
+    }
+
+    .calendar-events-preview {
+        display: none !important;
+    }
+
+    /* Selected Day Timeline on mobile */
+    .meeting-timeline-head {
+        padding-bottom: 10px !important;
+        margin-bottom: 14px !important;
+    }
+
+    .meeting-timeline-head h3 {
+        font-size: 15px !important;
+    }
+
+    #dayMeetingsTimeline {
+        min-height: auto !important;
+        gap: 10px !important;
+    }
+
+    /* Modal Mobile Adjustments */
+    #meetingModal .modal {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 8px !important;
+        border-radius: 16px !important;
+    }
+
+    #meetingModal .modal-head {
+        padding: 14px 18px !important;
+        border-radius: 16px 16px 0 0 !important;
+    }
+
+    #meetingModal .meeting-modal-body {
+        padding: 16px 14px !important;
+        max-height: calc(88vh - 120px) !important;
+    }
+
+    #meetingModal .meeting-form-grid {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+    }
+
+    #meetingModal .meeting-modal-footer {
+        padding: 12px 16px !important;
+        flex-direction: column-reverse !important;
+        gap: 10px !important;
+    }
+
+    #meetingModal .meeting-modal-footer button,
+    #meetingModal .meeting-footer-right {
+        width: 100% !important;
+    }
+
+    #meetingModal .meeting-footer-right {
+        display: flex !important;
+        flex-direction: column-reverse !important;
+        gap: 8px !important;
+        margin-left: 0 !important;
+    }
+
+    #meetingModal .meeting-footer-right .btn {
+        width: 100% !important;
+        justify-content: center !important;
+    }
+
+    #meetingModal #btnDeleteMeeting {
+        width: 100% !important;
+        justify-content: center !important;
     }
 }
 
