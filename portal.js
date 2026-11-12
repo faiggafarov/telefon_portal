@@ -3034,13 +3034,10 @@ async function initMeetingsPage() {
   renderDayTimeline(selectedMeetingDateStr);
 }
 
-function populateMeetingDepts() {
-  const sel = document.getElementById('mDept');
-  if (!sel) return;
-  const currentVal = sel.value;
-  sel.innerHTML = '<option value="">Şöbə seçin *</option>' +
-    (domains.departments || []).map(d => `<option value="${d.id}">${d.name}</option>`).join('');
-  if (currentVal) sel.value = currentVal;
+function populateMeetingDepts(selectedDeptId = '') {
+  const depts = (domains.departments || []).map(d => ({ val: d.id, text: d.name }));
+  populateFormCS('fcs-mDept', depts, 'Şöbə seçin *', true);
+  setFormCS('fcs-mDept', selectedDeptId, 'Şöbə seçin *');
 }
 
 async function loadMeetingsForMonth(year, month) {
@@ -3178,13 +3175,11 @@ function renderParticipantChecklist() {
   if (countBadge) countBadge.textContent = `${totalCount} seçilib`;
 
   // Populate department filter once
-  if (deptFilter && deptFilter.options.length <= 1 && domains.departments) {
-    domains.departments.forEach(d => {
-      const opt = document.createElement('option');
-      opt.value = d.id;
-      opt.textContent = d.name;
-      deptFilter.appendChild(opt);
-    });
+  const pDeptContainer = document.getElementById('fcs-mParticipantDept');
+  if (pDeptContainer && domains.departments && !pDeptContainer.dataset.populated) {
+    pDeptContainer.dataset.populated = 'true';
+    const deptOpts = (domains.departments || []).map(d => ({ val: d.id, text: d.name }));
+    populateFormCS('fcs-mParticipantDept', deptOpts, 'Bütün şöbələr', true);
   }
 
   // Filter employees
@@ -3403,6 +3398,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
 
   const searchInput = document.getElementById('mParticipantSearch');
   if (searchInput) searchInput.value = '';
+  setFormCS('fcs-mParticipantDept', '', 'Bütün şöbələr');
   const emailInput = document.getElementById('mExternalEmailInput');
   if (emailInput) emailInput.value = '';
   const dropdown = document.getElementById('mParticipantDropdown');
@@ -3414,7 +3410,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('meetingModalTitle').textContent = 'İclası Redaktə Et';
     document.getElementById('mTitle').value = m.title || '';
     document.getElementById('mOrganizer').value = m.organizer || '';
-    document.getElementById('mDept').value = m.dept_id || '';
+    populateMeetingDepts(m.dept_id || '');
     document.getElementById('mDate').value = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
     document.getElementById('mStartTime').value = m.start_time.slice(0, 5);
     document.getElementById('mEndTime').value = m.end_time.slice(0, 5);
@@ -3428,7 +3424,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('meetingModalTitle').textContent = 'Yeni İclas Təyin Et';
     document.getElementById('mTitle').value = '';
     document.getElementById('mOrganizer').value = portalUserName || '';
-    document.getElementById('mDept').value = '';
+    populateMeetingDepts('');
     document.getElementById('mDate').value = initialDate;
     document.getElementById('mStartTime').value = '10:00';
     document.getElementById('mEndTime').value = '11:00';

@@ -980,9 +980,11 @@
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Aid Olduğu Şöbə *</label>
-                        <select class="form-input" id="mDept" style="cursor: pointer;" required>
-                            <option value="">Şöbə seçin *</option>
-                        </select>
+                        <div class="form-cs" id="fcs-mDept">
+                            <div class="form-cs-selected placeholder" onclick="toggleFormCS('fcs-mDept')">Şöbə seçin *</div>
+                            <div class="form-cs-options" id="fcs-mDept-opts"></div>
+                            <input type="hidden" id="mDept">
+                        </div>
                     </div>
 
                     <div class="form-group full" style="margin-bottom: 0;">
@@ -1013,11 +1015,13 @@
                                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94A3B8; pointer-events: none;">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
-                                <input class="form-input" id="mParticipantSearch" type="text" placeholder="Ad və ya vəzifə ilə axtar..." oninput="filterParticipantEmployeesList(this.value)" style="font-size: 12px; padding: 7px 10px 7px 32px; width: 100%;">
+                                <input class="form-input" id="mParticipantSearch" type="text" placeholder="Ad və ya vəzifə ilə axtar..." oninput="filterParticipantEmployeesList()" style="font-size: 12px; padding: 7px 10px 7px 32px; width: 100%;">
                             </div>
-                            <select class="form-input" id="mParticipantDeptFilter" onchange="filterParticipantEmployeesList(document.getElementById('mParticipantSearch').value)" style="font-size: 12px; padding: 6px 10px; max-width: 170px; cursor: pointer;">
-                                <option value="">Bütün şöbələr</option>
-                            </select>
+                            <div class="form-cs" id="fcs-mParticipantDept" style="max-width: 190px;">
+                                <div class="form-cs-selected placeholder" style="padding: 7px 30px 7px 10px; font-size: 12px; border-radius: 8px;" onclick="toggleFormCS('fcs-mParticipantDept')">Bütün şöbələr</div>
+                                <div class="form-cs-options" id="fcs-mParticipantDept-opts"></div>
+                                <input type="hidden" id="mParticipantDeptFilter" onchange="filterParticipantEmployeesList()">
+                            </div>
                         </div>
 
                         <!-- Scrollable Employees Checklist Box -->
