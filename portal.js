@@ -3698,6 +3698,43 @@ function confirmIosTimePicker() {
   }
 }
 
+function formatTimeInput(input, target) {
+  let digits = input.value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length >= 3) {
+    input.value = digits.slice(0, 2) + ':' + digits.slice(2);
+  } else {
+    input.value = digits;
+  }
+  if (digits.length === 4 && target === 'start') {
+    const h = parseInt(digits.slice(0, 2), 10);
+    const m = parseInt(digits.slice(2, 4), 10);
+    if (h <= 23 && m <= 59) {
+      onStartTimeChange();
+    }
+  }
+}
+
+function validateTimeInput(input, target) {
+  let digits = input.value.replace(/\D/g, '');
+  if (!digits) {
+    input.value = target === 'start' ? '10:00' : '11:00';
+    return;
+  }
+  if (digits.length === 1) digits = '0' + digits + '00';
+  else if (digits.length === 2) digits = digits + '00';
+  else if (digits.length === 3) digits = '0' + digits;
+
+  let h = Math.min(23, Math.max(0, parseInt(digits.slice(0, 2), 10) || 0));
+  let m = Math.min(59, Math.max(0, parseInt(digits.slice(2, 4), 10) || 0));
+  input.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+  if (target === 'start') {
+    onStartTimeChange();
+  }
+}
+
+window.formatTimeInput = formatTimeInput;
+window.validateTimeInput = validateTimeInput;
 window.openIosTimePicker = openIosTimePicker;
 window.closeIosTimePicker = closeIosTimePicker;
 window.confirmIosTimePicker = confirmIosTimePicker;
@@ -3898,7 +3935,44 @@ function deleteMeetingFromModal() {
   if (meetingId) deleteMeeting(meetingId);
 }
 
-  window.openIosTimePicker = openIosTimePicker;
+  function formatTimeInput(input, target) {
+  let digits = input.value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length >= 3) {
+    input.value = digits.slice(0, 2) + ':' + digits.slice(2);
+  } else {
+    input.value = digits;
+  }
+  if (digits.length === 4 && target === 'start') {
+    const h = parseInt(digits.slice(0, 2), 10);
+    const m = parseInt(digits.slice(2, 4), 10);
+    if (h <= 23 && m <= 59) {
+      onStartTimeChange();
+    }
+  }
+}
+
+function validateTimeInput(input, target) {
+  let digits = input.value.replace(/\D/g, '');
+  if (!digits) {
+    input.value = target === 'start' ? '10:00' : '11:00';
+    return;
+  }
+  if (digits.length === 1) digits = '0' + digits + '00';
+  else if (digits.length === 2) digits = digits + '00';
+  else if (digits.length === 3) digits = '0' + digits;
+
+  let h = Math.min(23, Math.max(0, parseInt(digits.slice(0, 2), 10) || 0));
+  let m = Math.min(59, Math.max(0, parseInt(digits.slice(2, 4), 10) || 0));
+  input.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+  if (target === 'start') {
+    onStartTimeChange();
+  }
+}
+
+window.formatTimeInput = formatTimeInput;
+window.validateTimeInput = validateTimeInput;
+window.openIosTimePicker = openIosTimePicker;
   window.closeIosTimePicker = closeIosTimePicker;
   window.confirmIosTimePicker = confirmIosTimePicker;
   window.scrollIosWheelTo = scrollIosWheelTo;

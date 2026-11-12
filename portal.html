@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=optional"
         rel="stylesheet">
-    <link rel="stylesheet" href="portal.css?v=20261113_1">
+    <link rel="stylesheet" href="portal.css?v=20261113_2">
 </head>
 
 <body>
@@ -1063,22 +1063,26 @@
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Başlama Saatı *</label>
                         <div class="ios-time-picker-wrap" id="wrapStartTime">
-                            <input class="form-input ios-time-input" id="mStartTime" type="text" value="10:00" readonly
-                                onclick="openIosTimePicker('start')" style="cursor: pointer; font-weight: 600;">
-                            <span class="ios-time-picker-icon" onclick="openIosTimePicker('start')">
+                            <input class="form-input ios-time-input" id="mStartTime" type="text" inputmode="numeric"
+                                maxlength="5" value="10:00" placeholder="10:00"
+                                oninput="formatTimeInput(this, 'start')" onblur="validateTimeInput(this, 'start')"
+                                style="font-weight: 600;" required>
+                            <button type="button" class="ios-time-picker-icon" onclick="openIosTimePicker('start')" title="Saat seçicidən seç">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            </span>
+                            </button>
                         </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Bitmə Saatı *</label>
                         <div class="ios-time-picker-wrap" id="wrapEndTime">
-                            <input class="form-input ios-time-input" id="mEndTime" type="text" value="11:00" readonly
-                                onclick="openIosTimePicker('end')" style="cursor: pointer; font-weight: 600;">
-                            <span class="ios-time-picker-icon" onclick="openIosTimePicker('end')">
+                            <input class="form-input ios-time-input" id="mEndTime" type="text" inputmode="numeric"
+                                maxlength="5" value="11:00" placeholder="11:00"
+                                oninput="formatTimeInput(this, 'end')" onblur="validateTimeInput(this, 'end')"
+                                style="font-weight: 600;" required>
+                            <button type="button" class="ios-time-picker-icon" onclick="openIosTimePicker('end')" title="Saat seçicidən seç">
                                 <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            </span>
+                            </button>
                         </div>
                     </div>
 
@@ -1545,7 +1549,7 @@
         </div>
     </dialog>
 
-    <script src="portal.js?v=20261113_1"></script>
+    <script src="portal.js?v=20261113_2"></script>
 </body>
 
 </html>

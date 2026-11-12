@@ -4638,7 +4638,7 @@ html[data-header-role="user"] #userCard { display: none !important; }
 }
 
 .ios-time-picker-wrap .ios-time-input {
-    padding-right: 36px;
+    padding-right: 42px;
     background-color: #FFFFFF;
 }
 
@@ -4648,13 +4648,24 @@ html[data-header-role="user"] #userCard { display: none !important; }
 
 .ios-time-picker-icon {
     position: absolute;
-    right: 12px;
+    right: 6px;
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
     color: #64748B;
     pointer-events: auto;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.ios-time-picker-icon:hover {
+    background: #EFF6FF;
+    color: #2563EB;
 }
 
 .ios-time-picker-dialog {
@@ -4672,15 +4683,19 @@ html[data-header-role="user"] #userCard { display: none !important; }
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 18px;
+    padding: 14px 16px;
     border-bottom: 1px solid #E2E8F0;
     background: #F8FAFC;
+    gap: 8px;
 }
 
 .ios-picker-title {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     color: #0F172A;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .ios-picker-btn {
@@ -4691,6 +4706,8 @@ html[data-header-role="user"] #userCard { display: none !important; }
     cursor: pointer;
     padding: 4px 8px;
     border-radius: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .ios-picker-btn.cancel {
