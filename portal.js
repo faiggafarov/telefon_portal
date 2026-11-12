@@ -3209,15 +3209,20 @@ function renderParticipantChecklist() {
   box.innerHTML = list.map(e => {
     const isSelected = currentSelectedParticipants.some(p => p.type === 'employee' && String(p.id) === String(e.id));
     return `
-      <label style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 6px; background: ${isSelected ? '#EFF6FF' : '#fff'}; border: 1px solid ${isSelected ? '#BFDBFE' : '#E2E8F0'}; cursor: pointer; transition: background 0.1s;">
-        <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-          <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleEmployeeParticipant(${e.id}, this.checked)" style="cursor: pointer; width: 15px; height: 15px; accent-color: #2563EB;">
+      <label style="display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-radius: 8px; background: ${isSelected ? '#F0F7FF' : '#fff'}; border: 1px solid ${isSelected ? '#BFDBFE' : '#E2E8F0'}; cursor: pointer; transition: all 0.15s ease;">
+        <div style="display: flex; align-items: center; gap: 9px; min-width: 0;">
+          <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleEmployeeParticipant(${e.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent);">
           <div style="min-width: 0;">
-            <div style="font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${e.name}</div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${e.name}</div>
             <div style="font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${e.position_name || '—'} · ${e.dept_name || '—'}</div>
           </div>
         </div>
-        ${e.email && e.email !== 'null' ? `<span style="font-size: 11px; color: #2563EB; margin-left: 8px;">${e.email}</span>` : ''}
+        ${e.email && e.email !== 'null' ? `
+          <span style="font-size: 11px; color: #2563EB; margin-left: 8px; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;">
+            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+            ${e.email}
+          </span>
+        ` : ''}
       </label>
     `;
   }).join('');
@@ -3292,9 +3297,10 @@ function renderExternalChips() {
 
   const externals = currentSelectedParticipants.filter(p => p.type === 'external');
   container.innerHTML = externals.map(p => `
-    <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; background: #F0FDF4; color: #047857; border: 1px solid #BBF7D0; padding: 2px 7px; border-radius: 6px;">
-      <span>✉️ ${p.email}</span>
-      <button type="button" onclick="removeExternalParticipant('${p.email}')" style="background: none; border: none; cursor: pointer; color: #047857; padding: 0; font-size: 13px; line-height: 1;">&times;</button>
+    <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; background: #F8FAFC; color: #334155; border: 1px solid #CBD5E1; padding: 3px 8px; border-radius: 6px;">
+      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: #64748B;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      <span>${p.email}</span>
+      <button type="button" onclick="removeExternalParticipant('${p.email}')" style="background: none; border: none; cursor: pointer; color: #94A3B8; padding: 0 0 0 2px; font-size: 14px; line-height: 1;" title="Sil">&times;</button>
     </span>
   `).join('');
 }
@@ -3357,12 +3363,16 @@ function renderDayTimeline(dateStr) {
           <div><strong>Təşkilatçı:</strong> ${m.organizer}</div>
           ${m.dept_name ? `<div><strong>Şöbə:</strong> ${m.dept_name}</div>` : ''}
           ${participantsList.length > 0 ? `
-            <div style="margin-top: 4px;">
-              <strong style="display: block; margin-bottom: 3px; color: var(--text);">İştirakçılar (${participantsList.length}):</strong>
-              <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            <div style="margin-top: 6px;">
+              <strong style="display: block; margin-bottom: 4px; color: var(--text); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;">İştirakçılar (${participantsList.length}):</strong>
+              <div style="display: flex; flex-wrap: wrap; gap: 5px;">
                 ${participantsList.map(p => `
-                  <span style="font-size: 10px; background: #fff; border: 1px solid #CBD5E1; color: #334155; padding: 1px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 3px;">
-                    ${p.type === 'employee' ? '👤' : '✉️'} ${p.name || p.email}
+                  <span style="font-size: 11px; background: #fff; border: 1px solid #CBD5E1; color: #334155; padding: 2px 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+                    ${p.type === 'employee' 
+                      ? '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' 
+                      : '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>'
+                    }
+                    <span>${p.name || p.email}</span>
                   </span>
                 `).join('')}
               </div>

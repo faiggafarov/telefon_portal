@@ -1009,7 +1009,12 @@
 
                         <!-- Filter & Quick search toolbar for employee list -->
                         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                            <input class="form-input" id="mParticipantSearch" type="text" placeholder="🔍 Ad və ya vəzifə ilə tez tap..." oninput="filterParticipantEmployeesList(this.value)" style="font-size: 12px; padding: 6px 10px;">
+                            <div style="position: relative; flex: 1;">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94A3B8; pointer-events: none;">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <input class="form-input" id="mParticipantSearch" type="text" placeholder="Ad və ya vəzifə ilə axtar..." oninput="filterParticipantEmployeesList(this.value)" style="font-size: 12px; padding: 7px 10px 7px 32px; width: 100%;">
+                            </div>
                             <select class="form-input" id="mParticipantDeptFilter" onchange="filterParticipantEmployeesList(document.getElementById('mParticipantSearch').value)" style="font-size: 12px; padding: 6px 10px; max-width: 170px; cursor: pointer;">
                                 <option value="">Bütün şöbələr</option>
                             </select>

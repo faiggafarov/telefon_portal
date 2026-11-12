@@ -37,7 +37,7 @@ async function sendMeetingNotification(meetingData, isReminder = false) {
   const startFmt = (start_time || '').slice(0, 5);
   const endFmt = (end_time || '').slice(0, 5);
 
-  const subjectPrefix = isReminder ? '⏰ [XATIRLATMA - 1 SAAT QALDI]' : '📅 [YENİ İCLAS DƏVƏTİ]';
+  const subjectPrefix = isReminder ? '[XATIRLATMA - 1 SAAT QALDI]' : '[YENİ İCLAS DƏVƏTİ]';
   const subject = `${subjectPrefix} ${title} - ${dateFormatted} ${startFmt}`;
 
   const transporter = getTransporter();
@@ -50,10 +50,10 @@ async function sendMeetingNotification(meetingData, isReminder = false) {
     const pName = p.name || toEmail;
 
     const htmlContent = `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-        <div style="background: ${isReminder ? '#EA580C' : '#2563EB'}; padding: 24px 30px; color: #ffffff;">
-          <h2 style="margin: 0; font-size: 20px; font-weight: 700;">
-            ${isReminder ? '⏰ İclas Xatırlatması (1 Saat Qaldı)' : '📅 İclas Dəvəti'}
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <div style="background: ${isReminder ? '#EA580C' : '#1E293B'}; padding: 24px 30px; color: #ffffff;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.2px;">
+            ${isReminder ? 'İclas Xatırlatması (1 Saat Qaldı)' : 'İclas Dəvəti'}
           </h2>
           <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">
             Kadastr və Yerquruluşu Layihə-Tədqiqat Mərkəzi — İclas Otağı
@@ -77,22 +77,22 @@ async function sendMeetingNotification(meetingData, isReminder = false) {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
               <div>
                 <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; display: block;">Tarix</span>
-                <span style="font-size: 14px; font-weight: 600; color: #1E293B;">🗓️ ${dateFormatted}</span>
+                <span style="font-size: 14px; font-weight: 600; color: #1E293B;">${dateFormatted}</span>
               </div>
               <div>
                 <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; display: block;">Saat</span>
-                <span style="font-size: 14px; font-weight: 600; color: #1E293B;">🕒 ${startFmt} – ${endFmt}</span>
+                <span style="font-size: 14px; font-weight: 600; color: #1E293B;">${startFmt} – ${endFmt}</span>
               </div>
             </div>
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
               <div>
                 <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; display: block;">Təşkilatçı</span>
-                <span style="font-size: 14px; color: #1E293B;">👤 ${organizer}</span>
+                <span style="font-size: 14px; color: #1E293B;">${organizer}</span>
               </div>
               <div>
                 <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748B; display: block;">Aid Olduğu Şöbə</span>
-                <span style="font-size: 14px; color: #1E293B;">🏢 ${dept_name || '—'}</span>
+                <span style="font-size: 14px; color: #1E293B;">${dept_name || '—'}</span>
               </div>
             </div>
 
