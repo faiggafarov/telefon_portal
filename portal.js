@@ -3038,7 +3038,7 @@ function populateMeetingDepts() {
   const sel = document.getElementById('mDept');
   if (!sel) return;
   const currentVal = sel.value;
-  sel.innerHTML = '<option value="">Şöbə seçin (İxtiyari)</option>' +
+  sel.innerHTML = '<option value="">Şöbə seçin *</option>' +
     (domains.departments || []).map(d => `<option value="${d.id}">${d.name}</option>`).join('');
   if (currentVal) sel.value = currentVal;
 }
@@ -3390,6 +3390,12 @@ function openMeetingModal(meetingId = null, presetDate = null) {
   document.getElementById('meetingEditId').value = meetingId || '';
   const delBtn = document.getElementById('btnDeleteMeeting');
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const dateInput = document.getElementById('mDate');
+  if (dateInput) {
+    dateInput.min = todayStr;
+  }
+
   const searchInput = document.getElementById('mParticipantSearch');
   if (searchInput) searchInput.value = '';
   const emailInput = document.getElementById('mExternalEmailInput');
@@ -3411,11 +3417,14 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     currentSelectedParticipants = Array.isArray(m.participants) ? [...m.participants] : [];
     if (delBtn) delBtn.style.display = 'inline-flex';
   } else {
+    let initialDate = presetDate || selectedMeetingDateStr || todayStr;
+    if (initialDate < todayStr) initialDate = todayStr;
+
     document.getElementById('meetingModalTitle').textContent = 'Yeni İclas Təyin Et';
     document.getElementById('mTitle').value = '';
     document.getElementById('mOrganizer').value = portalUserName || '';
     document.getElementById('mDept').value = '';
-    document.getElementById('mDate').value = presetDate || selectedMeetingDateStr || new Date().toISOString().split('T')[0];
+    document.getElementById('mDate').value = initialDate;
     document.getElementById('mStartTime').value = '10:00';
     document.getElementById('mEndTime').value = '11:00';
     document.getElementById('mDescription').value = '';
@@ -3437,8 +3446,23 @@ async function saveMeeting() {
   const end_time = document.getElementById('mEndTime').value;
   const description = document.getElementById('mDescription').value.trim();
 
-  if (!title || !organizer || !meeting_date || !start_time || !end_time) {
-    showToast('Bütün məcburi sahələri (*) doldurun!', 'error');
+  if (!title || !organizer || !dept_id || !meeting_date || !start_time || !end_time) {
+    showToast('Bütün məcburi sahələri (*), o cümlədən Aid Olduğu Şöbəni seçin!', 'error');
+    return;
+  }
+
+  // Validate that meeting is not scheduled in the past
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  if (meeting_date < todayStr) {
+    showToast('Keçmiş tarixə iclas təyin etmək mümkün deyil!', 'error');
+    return;
+  }
+
+  if (meeting_date === todayStr && start_time < currentTimeStr) {
+    showToast('Keçmiş saata iclas təyin etmək mümkün deyil!', 'error');
     return;
   }
 
@@ -3450,7 +3474,7 @@ async function saveMeeting() {
   const payload = {
     title,
     organizer,
-    dept_id: dept_id ? Number(dept_id) : null,
+    dept_id: Number(dept_id),
     meeting_date,
     start_time,
     end_time,

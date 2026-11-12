@@ -527,12 +527,25 @@ app.get('/api/meetings', async (req, res) => {
   }
 });
 
-// Create meeting (Admin only, checks for time overlap)
+// Create meeting (Admin only, checks for time overlap and past date)
 app.post('/api/meetings', async (req, res) => {
   const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
 
-  if (!title || !organizer || !meeting_date || !start_time || !end_time) {
-    return res.status(400).json({ error: 'Mövzu, təşkilatçı, tarix, başlama və bitmə saatı məcburidir!' });
+  if (!title || !organizer || !dept_id || !meeting_date || !start_time || !end_time) {
+    return res.status(400).json({ error: 'Mövzu, təşkilatçı, şöbə, tarix, başlama və bitmə saatı məcburidir!' });
+  }
+
+  // Prevent past dates/times
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  if (meeting_date < todayStr) {
+    return res.status(400).json({ error: 'Keçmiş tarixə iclas təyin etmək mümkün deyil!' });
+  }
+
+  if (meeting_date === todayStr && start_time < currentTimeStr) {
+    return res.status(400).json({ error: 'Keçmiş saata iclas təyin etmək mümkün deyil!' });
   }
 
   if (start_time >= end_time) {
@@ -561,7 +574,7 @@ app.post('/api/meetings', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO meetings (title, organizer, dept_id, meeting_date, start_time, end_time, description, participants)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [title, organizer, dept_id || null, meeting_date, start_time, end_time, description || null, participantsJson]
+      [title, organizer, dept_id, meeting_date, start_time, end_time, description || null, participantsJson]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -575,6 +588,10 @@ app.patch('/api/meetings/:id', async (req, res) => {
   const { id } = req.params;
   const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
 
+  if (dept_id !== undefined && !dept_id) {
+    return res.status(400).json({ error: 'Aid Olduğu Şöbə məcburidir!' });
+  }
+
   if (start_time && end_time && start_time >= end_time) {
     return res.status(400).json({ error: 'Bitmə saatı başlama saatından sonra olmalıdır!' });
   }
@@ -585,9 +602,24 @@ app.patch('/api/meetings/:id', async (req, res) => {
     if (currRes.rows.length === 0) return res.status(404).json({ error: 'İclas tapılmadı' });
     const curr = currRes.rows[0];
 
-    const targetDate = meeting_date || curr.meeting_date;
+    const targetDate = meeting_date || (typeof curr.meeting_date === 'string' ? curr.meeting_date.split('T')[0] : curr.meeting_date);
     const targetStart = start_time || curr.start_time;
     const targetEnd = end_time || curr.end_time;
+
+    // If changing date or time, ensure it's not set in the past
+    if (meeting_date || start_time) {
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      if (targetDate < todayStr) {
+        return res.status(400).json({ error: 'Keçmiş tarixə iclas təyin etmək mümkün deyil!' });
+      }
+
+      if (targetDate === todayStr && targetStart < currentTimeStr) {
+        return res.status(400).json({ error: 'Keçmiş saata iclas təyin etmək mümkün deyil!' });
+      }
+    }
 
     // Check overlap excluding current meeting
     const overlapCheck = await pool.query(
