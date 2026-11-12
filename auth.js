@@ -1,7 +1,7 @@
 const { randomBytes, createHash } = require('node:crypto');
 
 const SESSION_TTL = 8 * 60 * 60 * 1000;
-const publicReads = new Set(['/employees', '/domains', '/departments', '/sectors', '/positions']);
+const publicReads = new Set(['/employees', '/domains', '/departments', '/sectors', '/positions', '/meetings']);
 
 function createAuth(pool, { now = Date.now } = {}) {
   const sessions = new Map();

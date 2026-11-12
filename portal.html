@@ -59,6 +59,13 @@
                     </svg>
                     Şöbələr
                 </div>
+                <div class="topbar-nav-item" id="navMeetings" onclick="setPage('meetings')">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    İclas Otağı
+                </div>
                 <div class="topbar-dropdown" data-header-admin id="adminNavDropdown">
                     <button type="button" class="topbar-nav-item topbar-dropdown-trigger" id="navAdminDropdown" onclick="toggleAdminNavDropdown(event)">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -347,6 +354,82 @@
                     </div>
                 </header>
                 <div id="deptsContent"></div>
+            </div>
+        </div>
+
+        <!-- MEETINGS (İCLAS OTAĞI) PAGE -->
+        <div class="page" id="meetingsPage" style="display:none">
+            <div class="meetings-container" style="max-width: 1400px; margin: 0 auto; padding: 20px 0;">
+                
+                <!-- Header Banner -->
+                <div class="meeting-header" style="background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); color: #fff; border-radius: 16px; padding: 24px 30px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.2);">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+                            <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,0.1); color: #38BDF8;">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                            </span>
+                            <h1 style="font-size: 22px; font-weight: 800; margin: 0; color: #fff;">İclas Otağı Rezervasiyası</h1>
+                        </div>
+                        <p style="margin: 0; font-size: 13px; color: #94A3B8;">Mərkəzin əsas iclas zalı üçün cədvəl, vaxt bölgüsü və planlaşdırılmış toplantılar</p>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <button class="btn btn-primary" id="btnOpenMeetingModal" style="background: #3B82F6; border: none; padding: 10px 20px; font-weight: 600; display: none;" onclick="openMeetingModal()">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Yeni İclas Təyin Et
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Main Grid: Left Calendar / Right Day Schedule -->
+                <div style="display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start;">
+                    
+                    <!-- Left: Month Calendar -->
+                    <div style="background: #fff; border-radius: 16px; border: 1px solid var(--border); padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h2 id="calendarMonthTitle" style="font-size: 18px; font-weight: 800; margin: 0; color: var(--text);">Noyabr 2026</h2>
+                            <div style="display: flex; gap: 6px;">
+                                <button class="btn btn-ghost" style="padding: 6px 12px; font-size: 12px;" onclick="changeMeetingMonth(-1)">
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
+                                    Əvvəlki
+                                </button>
+                                <button class="btn btn-ghost" style="padding: 6px 12px; font-size: 12px;" onclick="goToCurrentMeetingMonth()">Bu gün</button>
+                                <button class="btn btn-ghost" style="padding: 6px 12px; font-size: 12px;" onclick="changeMeetingMonth(1)">
+                                    Növbəti
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" /></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Calendar Days Header -->
+                        <div style="display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-weight: 700; font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+                            <div>B.e.</div><div>Ç.a.</div><div>Ç.</div><div>C.a.</div><div>C.</div><div>Ş.</div><div>B.</div>
+                        </div>
+
+                        <!-- Calendar Grid -->
+                        <div id="meetingCalendarGrid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;"></div>
+                    </div>
+
+                    <!-- Right: Selected Day Timeline & Details -->
+                    <div style="background: #fff; border-radius: 16px; border: 1px solid var(--border); padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);">
+                        <div style="border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: #3B82F6; letter-spacing: 0.5px;">GÜNLÜK CƏDVƏL</span>
+                                <h3 id="selectedDateTitle" style="font-size: 16px; font-weight: 800; margin: 4px 0 0 0; color: var(--text);">12 Noyabr 2026</h3>
+                            </div>
+                            <span id="selectedDateBadge" class="dept-chip" style="margin: 0; background: rgba(59, 130, 246, 0.1); color: #2563EB;">0 İclas</span>
+                        </div>
+
+                        <!-- Timeline list -->
+                        <div id="dayMeetingsTimeline" style="min-height: 320px; display: flex; flex-direction: column; gap: 12px;"></div>
+                    </div>
+
+                </div>
+
             </div>
         </div>
 
@@ -869,6 +952,108 @@
         </div>
 
     </main>
+
+    <!-- MEETING MODAL (Admin Only) -->
+    <div class="overlay" id="meetingModal">
+        <div class="modal" style="max-width: 520px;" onclick="event.stopPropagation()">
+            <div class="modal-head" style="background: linear-gradient(135deg, #1E293B, #0F172A); color: #fff; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <h2 id="meetingModalTitle" style="color: #fff; display: flex; align-items: center; gap: 8px; font-size: 16px;">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" style="color: #38BDF8;">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Yeni İclas Təyin Et
+                </h2>
+                <button class="modal-x" style="color: #94A3B8;" onclick="closeModal('meetingModal')">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 22px;">
+                <input type="hidden" id="meetingEditId">
+                <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 14px;">
+                    <div class="form-group full" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">İclasın Mövzusu *</label>
+                        <input class="form-input" id="mTitle" type="text" placeholder="Məs. Həftəlik struktur iclası" required>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Təşkilatçı (Ad Soyad) *</label>
+                        <input class="form-input" id="mOrganizer" type="text" placeholder="Məs. Əli Məmmədov" required>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Aid Olduğu Şöbə</label>
+                        <select class="form-input" id="mDept" style="cursor: pointer;">
+                            <option value="">Şöbə seçin (İxtiyari)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group full" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">İclas Tarixi *</label>
+                        <input class="form-input" id="mDate" type="date" required>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Başlama Saatı *</label>
+                        <input class="form-input" id="mStartTime" type="time" required>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600;">Bitmə Saatı *</label>
+                        <input class="form-input" id="mEndTime" type="time" required>
+                    </div>
+
+                    <!-- Participants Selection Section -->
+                    <div class="form-group full" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span>İştirakçılar (<span id="mParticipantCountBadge">0 seçilib</span>)</span>
+                            <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">Siyahıdan klikləyərək seçin</span>
+                        </label>
+
+                        <!-- Filter & Quick search toolbar for employee list -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <input class="form-input" id="mParticipantSearch" type="text" placeholder="🔍 Ad və ya vəzifə ilə tez tap..." oninput="filterParticipantEmployeesList(this.value)" style="font-size: 12px; padding: 6px 10px;">
+                            <select class="form-input" id="mParticipantDeptFilter" onchange="filterParticipantEmployeesList(document.getElementById('mParticipantSearch').value)" style="font-size: 12px; padding: 6px 10px; max-width: 170px; cursor: pointer;">
+                                <option value="">Bütün şöbələr</option>
+                            </select>
+                        </div>
+
+                        <!-- Scrollable Employees Checklist Box -->
+                        <div id="mEmployeesChecklistBox" style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: #F8FAFC; padding: 6px; display: flex; flex-direction: column; gap: 4px;">
+                        </div>
+
+                        <!-- External Email Section -->
+                        <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #E2E8F0;">
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px;">Kənar iştirakçı əlavə et (Email ilə):</div>
+                            <div style="display: flex; gap: 6px;">
+                                <input class="form-input" id="mExternalEmailInput" type="email" placeholder="Kənar email (məs. ad@mail.com)" style="font-size: 12px; padding: 6px 10px;">
+                                <button type="button" class="btn btn-ghost" style="padding: 0 14px; font-size: 12px; white-space: nowrap;" onclick="addExternalParticipant()">Əlavə et</button>
+                            </div>
+                        </div>
+
+                        <!-- External emails chips -->
+                        <div id="mExternalParticipantsChips" style="display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px;"></div>
+                    </div>
+
+                    <div class="form-group full" style="margin-bottom: 0;">
+                        <label class="form-label" style="font-weight: 600; display: flex; justify-content: space-between;">
+                            <span>Əlavə Qeydlər</span>
+                            <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">(İxtiyari)</span>
+                        </label>
+                        <textarea class="form-input" id="mDescription" rows="2" placeholder="Gündəlikdəki məsələlər və ya qeydlər..." style="resize: vertical;"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 14px 22px; background: #F8FAFF; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn" id="btnDeleteMeeting" style="background: #FEF2F2; color: #EF4444; border: 1px solid #FCA5A5; display: none;" onclick="deleteMeetingFromModal()">
+                    İclası Sil
+                </button>
+                <div style="display: flex; gap: 10px; margin-left: auto;">
+                    <button class="btn btn-ghost" onclick="closeModal('meetingModal')">Ləğv et</button>
+                    <button class="btn btn-primary" id="btnSaveMeeting" onclick="saveMeeting()">
+                        Təsdiq et
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- APP CUSTOM CONFIRM MODAL -->
     <div class="overlay" id="appConfirmModal" style="z-index: 9999;">

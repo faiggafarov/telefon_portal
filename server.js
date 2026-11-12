@@ -493,6 +493,158 @@ app.delete('/api/employees/:id', async (req, res) => {
 });
 
 
+/* ─── MEETINGS (İCLAS OTAĞI) API ─── */
+
+// Get meetings (filter by month or date range or all upcoming)
+app.get('/api/meetings', async (req, res) => {
+  const { month, date, from, to } = req.query;
+  try {
+    let query = `
+      SELECT m.*, d.name as dept_name
+      FROM meetings m
+      LEFT JOIN departments d ON d.id = m.dept_id
+    `;
+    const params = [];
+
+    if (date) {
+      params.push(date);
+      query += ` WHERE m.meeting_date = $${params.length}`;
+    } else if (month) {
+      // month format: YYYY-MM
+      params.push(`${month}-01`);
+      query += ` WHERE m.meeting_date >= $1::date AND m.meeting_date < ($1::date + interval '1 month')`;
+    } else if (from && to) {
+      params.push(from, to);
+      query += ` WHERE m.meeting_date >= $1 AND m.meeting_date <= $2`;
+    }
+
+    query += ` ORDER BY m.meeting_date ASC, m.start_time ASC`;
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get meetings error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Create meeting (Admin only, checks for time overlap)
+app.post('/api/meetings', async (req, res) => {
+  const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
+
+  if (!title || !organizer || !meeting_date || !start_time || !end_time) {
+    return res.status(400).json({ error: 'Mövzu, təşkilatçı, tarix, başlama və bitmə saatı məcburidir!' });
+  }
+
+  if (start_time >= end_time) {
+    return res.status(400).json({ error: 'Bitmə saatı başlama saatından sonra olmalıdır!' });
+  }
+
+  try {
+    // Check overlap for the single meeting room
+    // Overlap condition: existing.start < new.end AND existing.end > new.start
+    const overlapCheck = await pool.query(
+      `SELECT * FROM meetings 
+       WHERE meeting_date = $1 
+         AND start_time < $3 
+         AND end_time > $2`,
+      [meeting_date, start_time, end_time]
+    );
+
+    if (overlapCheck.rows.length > 0) {
+      const conflict = overlapCheck.rows[0];
+      return res.status(409).json({ 
+        error: `Bu vaxt aralığı artıq məşğuldur! İclas: "${conflict.title}" (${conflict.start_time.slice(0,5)} - ${conflict.end_time.slice(0,5)})` 
+      });
+    }
+
+    const participantsJson = JSON.stringify(Array.isArray(participants) ? participants : []);
+    const result = await pool.query(
+      `INSERT INTO meetings (title, organizer, dept_id, meeting_date, start_time, end_time, description, participants)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [title, organizer, dept_id || null, meeting_date, start_time, end_time, description || null, participantsJson]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create meeting error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Update meeting
+app.patch('/api/meetings/:id', async (req, res) => {
+  const { id } = req.params;
+  const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
+
+  if (start_time && end_time && start_time >= end_time) {
+    return res.status(400).json({ error: 'Bitmə saatı başlama saatından sonra olmalıdır!' });
+  }
+
+  try {
+    // Fetch current meeting
+    const currRes = await pool.query('SELECT * FROM meetings WHERE id = $1', [id]);
+    if (currRes.rows.length === 0) return res.status(404).json({ error: 'İclas tapılmadı' });
+    const curr = currRes.rows[0];
+
+    const targetDate = meeting_date || curr.meeting_date;
+    const targetStart = start_time || curr.start_time;
+    const targetEnd = end_time || curr.end_time;
+
+    // Check overlap excluding current meeting
+    const overlapCheck = await pool.query(
+      `SELECT * FROM meetings 
+       WHERE id != $1
+         AND meeting_date = $2 
+         AND start_time < $4 
+         AND end_time > $3`,
+      [id, targetDate, targetStart, targetEnd]
+    );
+
+    if (overlapCheck.rows.length > 0) {
+      const conflict = overlapCheck.rows[0];
+      return res.status(409).json({ 
+        error: `Bu vaxt aralığı artıq məşğuldur! İclas: "${conflict.title}" (${conflict.start_time.slice(0,5)} - ${conflict.end_time.slice(0,5)})` 
+      });
+    }
+
+    const participantsJson = participants !== undefined 
+      ? JSON.stringify(Array.isArray(participants) ? participants : [])
+      : null;
+
+    const result = await pool.query(
+      `UPDATE meetings 
+       SET title = COALESCE($1, title),
+           organizer = COALESCE($2, organizer),
+           dept_id = COALESCE($3, dept_id),
+           meeting_date = COALESCE($4, meeting_date),
+           start_time = COALESCE($5, start_time),
+           end_time = COALESCE($6, end_time),
+           description = COALESCE($7, description),
+           participants = CASE WHEN $8::jsonb IS NOT NULL THEN $8::jsonb ELSE participants END,
+           updated_at = now()
+       WHERE id = $9 RETURNING *`,
+      [title, organizer, dept_id, meeting_date, start_time, end_time, description, participantsJson, id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Update meeting error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
+// Delete meeting
+app.delete('/api/meetings/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM meetings WHERE id = $1 RETURNING *', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'İclas tapılmadı' });
+    res.json({ message: 'İclas uğurla silindi' });
+  } catch (err) {
+    console.error('Delete meeting error:', err);
+    res.status(500).json({ error: 'Database error', details: err.message });
+  }
+});
+
 /* ─── EDIT REQUESTS API ─── */
 
 // Get edit requests (supports filtering by status)
