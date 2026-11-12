@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=optional"
         rel="stylesheet">
-    <link rel="stylesheet" href="portal.css?v=20261112_4">
+    <link rel="stylesheet" href="portal.css?v=20261113_1">
 </head>
 
 <body>
@@ -1062,13 +1062,24 @@
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Başlama Saatı *</label>
-                        <input class="form-input" id="mStartTime" type="time" value="10:00"
-                            onchange="onStartTimeChange()" required>
+                        <div class="ios-time-picker-wrap" id="wrapStartTime">
+                            <input class="form-input ios-time-input" id="mStartTime" type="text" value="10:00" readonly
+                                onclick="openIosTimePicker('start')" style="cursor: pointer; font-weight: 600;">
+                            <span class="ios-time-picker-icon" onclick="openIosTimePicker('start')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </span>
+                        </div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">Bitmə Saatı *</label>
-                        <input class="form-input" id="mEndTime" type="time" value="11:00" required>
+                        <div class="ios-time-picker-wrap" id="wrapEndTime">
+                            <input class="form-input ios-time-input" id="mEndTime" type="text" value="11:00" readonly
+                                onclick="openIosTimePicker('end')" style="cursor: pointer; font-weight: 600;">
+                            <span class="ios-time-picker-icon" onclick="openIosTimePicker('end')">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            </span>
+                        </div>
                     </div>
 
                     <!-- Participants Selection Section -->
@@ -1404,6 +1415,29 @@
         <span id="toastMsg">Uğurlu əməliyyat!</span>
     </div>
 
+    <!-- IOS-STYLE WHEEL TIME PICKER MODAL -->
+    <div class="overlay" id="iosTimePickerModal" style="z-index: 10005;" onclick="closeIosTimePicker(false)">
+        <div class="ios-time-picker-dialog" onclick="event.stopPropagation()">
+            <div class="ios-picker-header">
+                <button type="button" class="ios-picker-btn cancel" onclick="closeIosTimePicker(false)">Ləğv et</button>
+                <div class="ios-picker-title" id="iosPickerTitle">Saat Seçin</div>
+                <button type="button" class="ios-picker-btn confirm" onclick="confirmIosTimePicker()">Hazırdır</button>
+            </div>
+            <div class="ios-wheel-container">
+                <div class="ios-wheel-selection-highlight"></div>
+                <!-- Hours Wheel -->
+                <div class="ios-wheel-col" id="iosWheelHours">
+                    <div class="ios-wheel-scroll" id="iosWheelHoursScroll"></div>
+                </div>
+                <div class="ios-wheel-separator">:</div>
+                <!-- Minutes Wheel -->
+                <div class="ios-wheel-col" id="iosWheelMinutes">
+                    <div class="ios-wheel-scroll" id="iosWheelMinutesScroll"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- DOMAIN FORM MODAL -->
     <div class="overlay" id="domainFormModal">
         <div class="modal" onclick="event.stopPropagation()">
@@ -1511,7 +1545,7 @@
         </div>
     </dialog>
 
-    <script src="portal.js?v=20261112_4"></script>
+    <script src="portal.js?v=20261113_1"></script>
 </body>
 
 </html>

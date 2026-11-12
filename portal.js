@@ -216,6 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load domains first, then load employees
   await fetchDomains();
   await fetchEmployees();
+  initIosWheelItems();
 });
 
 async function logout() {
@@ -3579,6 +3580,129 @@ function renderDayTimeline(dateStr) {
   }).join('');
 }
 
+/* ─── IOS STYLE WHEEL TIME PICKER SYSTEM ─── */
+let activeIosTimeTarget = 'start'; // 'start' or 'end'
+let currentWheelHour = 10;
+let currentWheelMinute = 0;
+const ITEM_HEIGHT = 44;
+
+function initIosWheelItems() {
+  const hoursScroll = document.getElementById('iosWheelHoursScroll');
+  const minutesScroll = document.getElementById('iosWheelMinutesScroll');
+  if (!hoursScroll || !minutesScroll) return;
+
+  // 00 to 23
+  let hHtml = '';
+  for (let i = 0; i < 24; i++) {
+    const s = String(i).padStart(2, '0');
+    hHtml += `<div class="ios-wheel-item" data-value="${i}" onclick="scrollIosWheelTo('iosWheelHours', ${i})">${s}</div>`;
+  }
+  hoursScroll.innerHTML = hHtml;
+
+  // 00 to 59
+  let mHtml = '';
+  for (let i = 0; i < 60; i++) {
+    const s = String(i).padStart(2, '0');
+    mHtml += `<div class="ios-wheel-item" data-value="${i}" onclick="scrollIosWheelTo('iosWheelMinutes', ${i})">${s}</div>`;
+  }
+  minutesScroll.innerHTML = mHtml;
+
+  setupWheelScrollListener('iosWheelHours', (val) => {
+    currentWheelHour = val;
+    updateWheelActiveClasses('iosWheelHours', val);
+  });
+
+  setupWheelScrollListener('iosWheelMinutes', (val) => {
+    currentWheelMinute = val;
+    updateWheelActiveClasses('iosWheelMinutes', val);
+  });
+}
+
+function setupWheelScrollListener(colId, onChange) {
+  const col = document.getElementById(colId);
+  if (!col) return;
+  let scrollTimeout = null;
+
+  col.addEventListener('scroll', () => {
+    const index = Math.round(col.scrollTop / ITEM_HEIGHT);
+    const maxIndex = colId === 'iosWheelHours' ? 23 : 59;
+    const clamped = Math.max(0, Math.min(index, maxIndex));
+    onChange(clamped);
+
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      // Snap smooth
+      col.scrollTo({ top: clamped * ITEM_HEIGHT, behavior: 'smooth' });
+    }, 100);
+  }, { passive: true });
+}
+
+function scrollIosWheelTo(colId, val, smooth = true) {
+  const col = document.getElementById(colId);
+  if (!col) return;
+  col.scrollTo({
+    top: val * ITEM_HEIGHT,
+    behavior: smooth ? 'smooth' : 'auto'
+  });
+  updateWheelActiveClasses(colId, val);
+}
+
+function updateWheelActiveClasses(colId, selectedVal) {
+  const col = document.getElementById(colId);
+  if (!col) return;
+  col.querySelectorAll('.ios-wheel-item').forEach(item => {
+    item.classList.toggle('selected', Number(item.dataset.value) === selectedVal);
+  });
+}
+
+function openIosTimePicker(target) {
+  activeIosTimeTarget = target;
+  const inputId = target === 'start' ? 'mStartTime' : 'mEndTime';
+  const input = document.getElementById(inputId);
+  const currentVal = input ? input.value : (target === 'start' ? '10:00' : '11:00');
+
+  const parts = currentVal.split(':').map(Number);
+  currentWheelHour = !isNaN(parts[0]) ? parts[0] : 10;
+  currentWheelMinute = !isNaN(parts[1]) ? parts[1] : 0;
+
+  const titleEl = document.getElementById('iosPickerTitle');
+  if (titleEl) {
+    titleEl.textContent = target === 'start' ? 'Başlama Saatını Seçin' : 'Bitmə Saatını Seçin';
+  }
+
+  const modal = document.getElementById('iosTimePickerModal');
+  if (modal) modal.classList.add('open');
+
+  // Position wheels
+  setTimeout(() => {
+    scrollIosWheelTo('iosWheelHours', currentWheelHour, false);
+    scrollIosWheelTo('iosWheelMinutes', currentWheelMinute, false);
+  }, 30);
+}
+
+function closeIosTimePicker(confirmed = false) {
+  const modal = document.getElementById('iosTimePickerModal');
+  if (modal) modal.classList.remove('open');
+}
+
+function confirmIosTimePicker() {
+  const timeStr = `${String(currentWheelHour).padStart(2, '0')}:${String(currentWheelMinute).padStart(2, '0')}`;
+  const inputId = activeIosTimeTarget === 'start' ? 'mStartTime' : 'mEndTime';
+  const input = document.getElementById(inputId);
+  if (input) input.value = timeStr;
+
+  closeIosTimePicker(true);
+
+  if (activeIosTimeTarget === 'start') {
+    onStartTimeChange();
+  }
+}
+
+window.openIosTimePicker = openIosTimePicker;
+window.closeIosTimePicker = closeIosTimePicker;
+window.confirmIosTimePicker = confirmIosTimePicker;
+window.scrollIosWheelTo = scrollIosWheelTo;
+
 function onStartTimeChange() {
   const startInput = document.getElementById('mStartTime');
   const endInput = document.getElementById('mEndTime');
@@ -3586,8 +3710,6 @@ function onStartTimeChange() {
 
   const startVal = startInput.value;
   if (!startVal) return;
-
-  endInput.min = startVal;
 
   // If end time is earlier or equal to start, advance by 1 hour automatically
   if (!endInput.value || endInput.value <= startVal) {
@@ -3776,8 +3898,12 @@ function deleteMeetingFromModal() {
   if (meetingId) deleteMeeting(meetingId);
 }
 
-window.openMeetingModal = openMeetingModal;
-window.saveMeeting = saveMeeting;
+  window.openIosTimePicker = openIosTimePicker;
+  window.closeIosTimePicker = closeIosTimePicker;
+  window.confirmIosTimePicker = confirmIosTimePicker;
+  window.scrollIosWheelTo = scrollIosWheelTo;
+  window.openMeetingModal = openMeetingModal;
+  window.saveMeeting = saveMeeting;
 window.deleteMeeting = deleteMeeting;
 window.deleteMeetingFromModal = deleteMeetingFromModal;
 window.changeMeetingMonth = changeMeetingMonth;
