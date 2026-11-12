@@ -2320,11 +2320,19 @@ function openAddPortalUserModal() {
   const modal = document.getElementById('addPortalUserModal');
   if (!modal) return;
 
+  const getDeptNameSafe = (id) => {
+    const d = (domains.departments || []).find(x => String(x.id) === String(id));
+    return d ? d.name : '';
+  };
+
   // Populate employees dropdown
   const empOpts = (employees || [])
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name, 'az'))
-    .map(e => ({ val: String(e.id), text: `${e.name} (${getDeptName(e.dept_id) || 'Şöbəsiz'})` }));
+    .map(e => {
+      const deptName = getDeptNameSafe(e.dept_id);
+      return { val: String(e.id), text: deptName ? `${e.name} (${deptName})` : e.name };
+    });
 
   populateFormCS('fcs-pUserEmp', empOpts, 'Əməkdaş seçin...', true);
   setFormCS('fcs-pUserEmp', '', 'Əməkdaş seçin...');
