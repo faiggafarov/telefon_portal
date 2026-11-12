@@ -3,6 +3,7 @@ const path = require('path');
 const { Pool } = require('pg');
 const cors = require('cors');
 require('dotenv').config();
+const { sendMeetingNotification } = require('./mailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -576,7 +577,24 @@ app.post('/api/meetings', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [title, organizer, dept_id, meeting_date, start_time, end_time, description || null, participantsJson]
     );
-    res.status(201).json(result.rows[0]);
+
+    const newMeeting = result.rows[0];
+
+    // Fetch department name for email template
+    try {
+      const dRes = await pool.query('SELECT name FROM departments WHERE id = $1', [dept_id]);
+      const deptName = dRes.rows[0]?.name || '';
+      // Asynchronously send emails to participants
+      sendMeetingNotification({
+        ...newMeeting,
+        dept_name: deptName,
+        participants: Array.isArray(participants) ? participants : []
+      }, false).catch(mErr => console.error('Error sending meeting invitation emails:', mErr));
+    } catch (deptErr) {
+      console.error('Error fetching dept for email:', deptErr);
+    }
+
+    res.status(201).json(newMeeting);
   } catch (err) {
     console.error('Create meeting error:', err);
     res.status(500).json({ error: 'Database error', details: err.message });
@@ -1276,6 +1294,43 @@ app.get('/api/export/:table', async (req, res) => {
     res.status(500).json({ error: 'Export zamanı xəta baş verdi', details: err.message });
   }
 });
+
+/* ─── MEETING REMINDER CRON / WORKER (1 SAAT QALMIŞ BİLDİRİŞ) ─── */
+async function checkAndSendMeetingReminders() {
+  try {
+    // Current time and time in next 60 minutes
+    const now = new Date();
+    // Format meeting_date as YYYY-MM-DD
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    
+    // Find meetings today where reminder_sent is false and meeting starts in [0, 60] minutes
+    const query = `
+      SELECT m.*, d.name as dept_name
+      FROM meetings m
+      LEFT JOIN departments d ON d.id = m.dept_id
+      WHERE m.meeting_date = $1
+        AND (m.reminder_sent IS FALSE OR m.reminder_sent IS NULL)
+        AND m.start_time > (CURRENT_TIME)
+        AND m.start_time <= (CURRENT_TIME + interval '60 minutes')
+    `;
+
+    const res = await pool.query(query, [todayStr]);
+    if (res.rows.length > 0) {
+      for (const m of res.rows) {
+        console.log(`[REMINDER] Sending 1-hour prior reminder for meeting: "${m.title}" (ID: ${m.id})`);
+        await sendMeetingNotification(m, true);
+        await pool.query('UPDATE meetings SET reminder_sent = true WHERE id = $1', [m.id]);
+      }
+    }
+  } catch (err) {
+    console.error('Error in checkAndSendMeetingReminders:', err.message);
+  }
+}
+
+// Run every 2 minutes
+setInterval(checkAndSendMeetingReminders, 2 * 60 * 1000);
+// Also run on startup after 5 seconds
+setTimeout(checkAndSendMeetingReminders, 5000);
 
 // Start Server
 app.listen(PORT, () => {

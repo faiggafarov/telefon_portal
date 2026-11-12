@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS meetings (
     end_time time NOT NULL,
     description text,
     participants jsonb DEFAULT '[]'::jsonb,
+    reminder_sent boolean DEFAULT false,
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     CONSTRAINT meetings_pkey PRIMARY KEY (id)
