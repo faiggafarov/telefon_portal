@@ -3830,8 +3830,63 @@ function openMeetingModal(meetingId = null, presetDate = null) {
   }
 
   renderParticipantChecklist();
+  loadBusyMeetingsForDate(document.getElementById('mDate').value);
   document.getElementById('meetingModal').classList.add('open');
 }
+
+async function loadBusyMeetingsForDate(dateStr) {
+  const box = document.getElementById('mDateBusyBox');
+  if (!box) return;
+  if (!dateStr) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
+  const editId = document.getElementById('meetingEditId')?.value || '';
+  box.style.display = 'block';
+  box.innerHTML = `<div style="font-size: 12px; color: #64748B; padding: 6px 10px;">Yoxlanılır...</div>`;
+
+  try {
+    const res = await fetch(`${API_URL}/meetings?date=${encodeURIComponent(dateStr)}`, { headers: HEADERS });
+    if (!res.ok) throw new Error('Failed');
+    let list = await res.json();
+    if (editId) {
+      list = list.filter(m => String(m.id) !== String(editId));
+    }
+
+    if (!list || list.length === 0) {
+      box.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; background: #F0FDF4; border: 1px solid #BBF7D0; color: #15803D; font-size: 12px; font-weight: 600;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+          Bu tarixdə heç bir iclas yoxdur (Gün ərzində boşdur)
+        </div>
+      `;
+      return;
+    }
+
+    box.innerHTML = `
+      <div style="padding: 10px 12px; border-radius: 10px; background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; margin-bottom: 6px;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Bu tarixdə məşğul olan saatlar (${list.length}):
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${list.map(m => `
+            <span style="font-size: 11.5px; font-weight: 600; background: #FFFFFF; border: 1px solid #FCD34D; color: #78350F; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+              <strong>${m.start_time.slice(0, 5)} – ${m.end_time.slice(0, 5)}</strong>
+              <span style="opacity: 0.75;">• ${m.title}</span>
+            </span>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+}
+window.loadBusyMeetingsForDate = loadBusyMeetingsForDate;
 
 async function saveMeeting() {
   const meetingId = document.getElementById('meetingEditId').value;

@@ -1057,7 +1057,8 @@
 
                     <div class="form-group full" style="margin-bottom: 0;">
                         <label class="form-label" style="font-weight: 600;">İclas Tarixi *</label>
-                        <input class="form-input" id="mDate" type="date" required>
+                        <input class="form-input" id="mDate" type="date" onchange="loadBusyMeetingsForDate(this.value)" required>
+                        <div id="mDateBusyBox" style="margin-top: 8px; display: none;"></div>
                     </div>
 
                     <div class="form-group" style="margin-bottom: 0;">
@@ -1549,7 +1550,7 @@
         </div>
     </dialog>
 
-    <script src="portal.js?v=20261113_4"></script>
+    <script src="portal.js?v=20261113_5"></script>
 </body>
 
 </html>
