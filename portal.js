@@ -33,6 +33,20 @@ function formatCarPlate(plate) {
 }
 window.formatCarPlate = formatCarPlate;
 
+// Hərf fərqlərini (Ə/E, İ/I, Ö/O, Ü/U, Ş/S, Ç/C, Ğ/G) yumşaldan funksiya
+function normalizeAzChars(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/[Əə]/g, 'E')
+    .replace(/[Iıİi]/g, 'I')
+    .replace(/[Öö]/g, 'O')
+    .replace(/[Üü]/g, 'U')
+    .replace(/[Şş]/g, 'S')
+    .replace(/[Çç]/g, 'C')
+    .replace(/[Ğğ]/g, 'G')
+    .toUpperCase();
+}
+
 // Axtarış üçün mətn təmizləyici (tire, boşluq, nöqtə və s. işarələri görməzdən gəlmək üçün)
 function normalizeForSearch(str) {
   if (!str) return '';
@@ -50,12 +64,17 @@ function matchesSearch(fieldValue, query) {
   // 1. Birbaşa alt-sətir axtarışı
   if (fStr.includes(qStr)) return true;
 
-  // 2. Tire, boşluq və simvolları təmizləyərək axtarış (məs: "10ab123" -> "10-AB-123")
+  // 2. Azərbaycan hərflərinin transliterasiyası ilə axtarış (məs: "eli" -> "Əli", "huseyn" -> "Hüseyn")
+  const fSoft = normalizeAzChars(fStr);
+  const qSoft = normalizeAzChars(qStr);
+  if (qSoft && fSoft.includes(qSoft)) return true;
+
+  // 3. Tire, boşluq və simvolları təmizləyərək axtarış (məs: "10ab123" -> "10-AB-123")
   const fClean = normalizeForSearch(fStr);
   const qClean = normalizeForSearch(qStr);
   if (qClean && fClean.includes(qClean)) return true;
 
-  // 3. Telefon nömrələri üçün xüsusi rəqəm axtarışı (məs: "0502439132" -> "+994 50-243-91-32")
+  // 4. Telefon nömrələri üçün xüsusi rəqəm axtarışı (məs: "0502439132" -> "+994 50-243-91-32")
   const qDigits = qStr.replace(/\D/g, '');
   if (qDigits && qDigits.length >= 3) {
     const fDigits = fStr.replace(/\D/g, '');
@@ -3032,6 +3051,62 @@ async function initMeetingsPage() {
   await loadMeetingsForMonth(currentMeetingDate.getFullYear(), currentMeetingDate.getMonth() + 1);
   renderMeetingCalendar();
   renderDayTimeline(selectedMeetingDateStr);
+  updateMeetingRoomLiveStatus();
+}
+
+function updateMeetingRoomLiveStatus() {
+  const badge = document.getElementById('meetingRoomLiveStatus');
+  const textEl = document.getElementById('meetingRoomLiveText');
+  if (!badge || !textEl) return;
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+  // Find meetings today
+  const todayMeetings = currentMonthMeetings.filter(m => {
+    const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
+    return mDate === todayStr;
+  });
+
+  // Check if an active meeting is in progress right now
+  const ongoing = todayMeetings.find(m => {
+    const s = m.start_time.slice(0, 5);
+    const e = m.end_time.slice(0, 5);
+    return currentTimeStr >= s && currentTimeStr < e;
+  });
+
+  if (ongoing) {
+    badge.style.background = 'rgba(239, 68, 68, 0.15)';
+    badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+    badge.style.color = '#FCA5A5';
+    badge.innerHTML = `
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4444; display: inline-block; box-shadow: 0 0 8px #EF4444; animation: pulse 1.5s infinite;"></span>
+      <span>Zal Məşğuldur (${ongoing.start_time.slice(0, 5)} – ${ongoing.end_time.slice(0, 5)})</span>
+    `;
+    return;
+  }
+
+  // Find next upcoming meeting today
+  const nextMeeting = todayMeetings
+    .filter(m => m.start_time.slice(0, 5) > currentTimeStr)
+    .sort((a, b) => a.start_time.localeCompare(b.start_time))[0];
+
+  badge.style.background = 'rgba(16, 185, 129, 0.15)';
+  badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+  badge.style.color = '#6EE7B7';
+
+  if (nextMeeting) {
+    badge.innerHTML = `
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 8px #10B981;"></span>
+      <span>Zal Boşdur (Növbəti: ${nextMeeting.start_time.slice(0, 5)})</span>
+    `;
+  } else {
+    badge.innerHTML = `
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #10B981; display: inline-block; box-shadow: 0 0 8px #10B981;"></span>
+      <span>Zal Gün Ərzində Boşdur</span>
+    `;
+  }
 }
 
 function populateMeetingDepts(selectedDeptId = '') {
@@ -3330,31 +3405,49 @@ function renderDayTimeline(dateStr) {
     return;
   }
 
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
   container.innerHTML = meetings.map(m => {
     const start = m.start_time.slice(0, 5);
     const end = m.end_time.slice(0, 5);
     const participantsList = Array.isArray(m.participants) ? m.participants : [];
 
+    const isPast = dateStr < todayStr || (dateStr === todayStr && end <= currentTimeStr);
+    const isOngoing = dateStr === todayStr && currentTimeStr >= start && currentTimeStr < end;
+
+    let borderLeftColor = '#3B82F6';
+    let statusBadge = '';
+
+    if (isOngoing) {
+      borderLeftColor = '#10B981';
+      statusBadge = '<span style="font-size: 10px; font-weight: 800; background: #DCFCE7; color: #15803D; padding: 2px 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;"><span style="width:6px;height:6px;border-radius:50%;background:#16A34A;display:inline-block;"></span> Hazırda Gedir</span>';
+    } else if (isPast) {
+      borderLeftColor = '#94A3B8';
+      statusBadge = '<span style="font-size: 10px; font-weight: 700; background: #F1F5F9; color: #64748B; padding: 2px 6px; border-radius: 5px;">Başa çatıb</span>';
+    }
+
     return `
-      <div style="border-radius: 12px; border: 1px solid #E2E8F0; padding: 14px; background: #F8FAFC; border-left: 4px solid #3B82F6; transition: all 0.15s ease;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-          <span style="font-size: 12px; font-weight: 800; color: #2563EB; background: #EFF6FF; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            ${start} – ${end}
-          </span>
-          <div style="display: flex; gap: 4px; align-items: center;">
-            <button class="act-btn" title="Outlook Təqviminə (.ics) Əlavə Et" style="width: 26px; height: 26px; color: #0284C7;" onclick="downloadMeetingIcs(${m.id})">
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-            </button>
-            ${portalUserRole === 'admin' ? `
+      <div style="border-radius: 12px; border: 1px solid #E2E8F0; padding: 14px; background: ${isPast ? '#FAFAFA' : '#F8FAFC'}; border-left: 4px solid ${borderLeftColor}; opacity: ${isPast ? '0.75' : '1'}; transition: all 0.15s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size: 12px; font-weight: 800; color: ${isPast ? '#64748B' : '#2563EB'}; background: ${isPast ? '#F1F5F9' : '#EFF6FF'}; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              ${start} – ${end}
+            </span>
+            ${statusBadge}
+          </div>
+          ${portalUserRole === 'admin' ? `
+            <div style="display: flex; gap: 4px; flex-shrink: 0;">
               <button class="act-btn" title="Redaktə et" style="width: 26px; height: 26px;" onclick="openMeetingModal(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               </button>
               <button class="act-btn red" title="Sil" style="width: 26px; height: 26px;" onclick="deleteMeeting(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
-            ` : ''}
-          </div>
+            </div>
+          ` : ''}
         </div>
         <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px;">${m.title}</div>
         <div style="font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
@@ -3531,13 +3624,6 @@ async function saveMeeting() {
     showToast(meetingId ? 'İclas məlumatları yeniləndi ✓' : 'İclas uğurla təyin edildi ✓');
     closeModal('meetingModal');
 
-    // If new meeting created, automatically trigger Outlook .ics download so admin can open in Outlook with 1-click
-    if (!meetingId && data && data.id) {
-      setTimeout(() => {
-        downloadMeetingIcs(data.id);
-      }, 400);
-    }
-
     // Reload and refresh UI
     const parts = meeting_date.split('-');
     await loadMeetingsForMonth(Number(parts[0]), Number(parts[1]));
@@ -3585,78 +3671,6 @@ function deleteMeetingFromModal() {
   const meetingId = document.getElementById('meetingEditId').value;
   if (meetingId) deleteMeeting(meetingId);
 }
-
-/* ─── OUTLOOK / ICALENDAR (.ICS) GENERATOR & DOWNLOADER ─── */
-function downloadMeetingIcs(meetingId) {
-  const m = currentMonthMeetings.find(x => String(x.id) === String(meetingId));
-  if (!m) {
-    showToast('İclas məlumatları tapılmadı', 'error');
-    return;
-  }
-
-  const dateStr = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-  const [year, month, day] = dateStr.split('-');
-  const [startH, startM] = m.start_time.slice(0, 5).split(':');
-  const [endH, endM] = m.end_time.slice(0, 5).split(':');
-
-  const dtStart = `${year}${month}${day}T${startH}${startM}00`;
-  const dtEnd = `${year}${month}${day}T${endH}${endM}00`;
-  const dtStamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-  const participantsList = Array.isArray(m.participants) ? m.participants : [];
-  const attendeeLines = participantsList
-    .filter(p => p && p.email)
-    .map(p => `ATTENDEE;CN=${p.name || p.email};ROLE=REQ-PARTICIPANT:mailto:${p.email}`)
-    .join('\r\n');
-
-  const summary = m.title;
-  const description = `Təşkilatçı: ${m.organizer}\\nŞöbə: ${m.dept_name || '—'}\\n${m.description ? m.description.replace(/\n/g, '\\n') : ''}`;
-  const location = 'İclas Zalı (Mərkəz)';
-
-  const icsData = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Kadastr və Yerquruluşu Layihə-Tədqiqat Mərkəzi//Telefon Portalı//AZ',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    `UID:meeting-${m.id}-${dateStr}@telefonportal.az`,
-    `DTSTAMP:${dtStamp}`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
-    `SUMMARY:${summary}`,
-    `DESCRIPTION:${description}`,
-    `LOCATION:${location}`,
-    `ORGANIZER;CN=${m.organizer}:mailto:no-reply@telefonportal.az`,
-    attendeeLines,
-    'BEGIN:VALARM',
-    'TRIGGER:-PT15M',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:İclasa 15 dəqiqə qaldı',
-    'END:VALARM',
-    'BEGIN:VALARM',
-    'TRIGGER:-PT60M',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:İclasa 1 saat qaldı',
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ].filter(Boolean).join('\r\n');
-
-  const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `iclas-${dateStr}-${m.id}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  showToast('Outlook təqvim faylı (.ics) yükləndi ✓');
-}
-
-window.downloadMeetingIcs = downloadMeetingIcs;
 
 window.openMeetingModal = openMeetingModal;
 window.saveMeeting = saveMeeting;
