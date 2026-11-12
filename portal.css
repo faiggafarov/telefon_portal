@@ -4628,6 +4628,15 @@ html[data-header-role="user"] #userCard { display: none !important; }
         width: 100% !important;
         justify-content: center !important;
     }
+
+    #meetingModal .form-cs-options {
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
 }
 
 /* ─── IOS STYLE WHEEL TIME PICKER ─── */
