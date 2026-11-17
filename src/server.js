@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
 const cors = require('cors');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const { sendMeetingNotification } = require('./mailer');
 
 const app = express();
@@ -10,13 +10,13 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/api/import', express.json({ limit: '5mb' }));
 app.use(express.json());
 
 // Serve portal.html at root
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'portal.html'));
+  res.sendFile(path.join(__dirname, '..', 'public', 'portal.html'));
 });
 app.use((err, req, res, next) => {
   if (err.type === 'entity.too.large') {
@@ -501,9 +501,8 @@ app.get('/api/meetings', async (req, res) => {
   const { month, date, from, to } = req.query;
   try {
     let query = `
-      SELECT m.*, TO_CHAR(m.meeting_date, 'YYYY-MM-DD') as meeting_date, d.name as dept_name
+      SELECT m.*, TO_CHAR(m.meeting_date, 'YYYY-MM-DD') as meeting_date
       FROM meetings m
-      LEFT JOIN departments d ON d.id = m.dept_id
     `;
     const params = [];
 
@@ -532,8 +531,8 @@ app.get('/api/meetings', async (req, res) => {
 app.post('/api/meetings', async (req, res) => {
   const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
 
-  if (!title || !organizer || !dept_id || !meeting_date || !start_time || !end_time) {
-    return res.status(400).json({ error: 'Mövzu, təşkilatçı, şöbə, tarix, başlama və bitmə saatı məcburidir!' });
+  if (!title || !organizer || !meeting_date || !start_time || !end_time) {
+    return res.status(400).json({ error: 'Mövzu, təşkilatçı, tarix, başlama və bitmə saatı məcburidir!' });
   }
 
   // Prevent past dates/times
@@ -573,25 +572,22 @@ app.post('/api/meetings', async (req, res) => {
 
     const participantsJson = JSON.stringify(Array.isArray(participants) ? participants : []);
     const result = await pool.query(
-      `INSERT INTO meetings (title, organizer, dept_id, meeting_date, start_time, end_time, description, participants)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [title, organizer, dept_id, meeting_date, start_time, end_time, description || null, participantsJson]
+      `INSERT INTO meetings (title, organizer, meeting_date, start_time, end_time, description, participants)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [title, organizer, meeting_date, start_time, end_time, description || null, participantsJson]
     );
 
     const newMeeting = result.rows[0];
 
-    // Fetch department name for email template
+    // Asynchronously send emails to participants
     try {
-      const dRes = await pool.query('SELECT name FROM departments WHERE id = $1', [dept_id]);
-      const deptName = dRes.rows[0]?.name || '';
-      // Asynchronously send emails to participants
       sendMeetingNotification({
         ...newMeeting,
-        dept_name: deptName,
+        dept_name: '',
         participants: Array.isArray(participants) ? participants : []
       }, false).catch(mErr => console.error('Error sending meeting invitation emails:', mErr));
-    } catch (deptErr) {
-      console.error('Error fetching dept for email:', deptErr);
+    } catch (mailErr) {
+      console.error('Error preparing meeting invitation emails:', mailErr);
     }
 
     res.status(201).json(newMeeting);
@@ -604,11 +600,7 @@ app.post('/api/meetings', async (req, res) => {
 // Update meeting
 app.patch('/api/meetings/:id', async (req, res) => {
   const { id } = req.params;
-  const { title, organizer, dept_id, meeting_date, start_time, end_time, description, participants } = req.body;
-
-  if (dept_id !== undefined && !dept_id) {
-    return res.status(400).json({ error: 'Aid Olduğu Şöbə məcburidir!' });
-  }
+  const { title, organizer, meeting_date, start_time, end_time, description, participants } = req.body;
 
   if (start_time && end_time && start_time >= end_time) {
     return res.status(400).json({ error: 'Bitmə saatı başlama saatından sonra olmalıdır!' });
@@ -664,15 +656,14 @@ app.patch('/api/meetings/:id', async (req, res) => {
       `UPDATE meetings 
        SET title = COALESCE($1, title),
            organizer = COALESCE($2, organizer),
-           dept_id = COALESCE($3, dept_id),
-           meeting_date = COALESCE($4, meeting_date),
-           start_time = COALESCE($5, start_time),
-           end_time = COALESCE($6, end_time),
-           description = COALESCE($7, description),
-           participants = CASE WHEN $8::jsonb IS NOT NULL THEN $8::jsonb ELSE participants END,
+           meeting_date = COALESCE($3, meeting_date),
+           start_time = COALESCE($4, start_time),
+           end_time = COALESCE($5, end_time),
+           description = COALESCE($6, description),
+           participants = CASE WHEN $7::jsonb IS NOT NULL THEN $7::jsonb ELSE participants END,
            updated_at = now()
-       WHERE id = $9 RETURNING *`,
-      [title, organizer, dept_id, meeting_date, start_time, end_time, description, participantsJson, id]
+       WHERE id = $8 RETURNING *`,
+      [title, organizer, meeting_date, start_time, end_time, description, participantsJson, id]
     );
 
     res.json(result.rows[0]);
@@ -1361,9 +1352,8 @@ async function checkAndSendMeetingReminders() {
     
     // Find meetings today where reminder_sent is false and meeting starts in [0, 60] minutes
     const query = `
-      SELECT m.*, d.name as dept_name
+      SELECT m.*
       FROM meetings m
-      LEFT JOIN departments d ON d.id = m.dept_id
       WHERE m.meeting_date = $1
         AND (m.reminder_sent IS FALSE OR m.reminder_sent IS NULL)
         AND m.start_time > (CURRENT_TIME)

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool, Client } = require('pg');
-require('dotenv').config();
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const dbHost = process.env.DB_HOST || 'localhost';
 const dbPort = parseInt(process.env.DB_PORT || '5432');

@@ -218,10 +218,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   await fetchEmployees();
   initIosWheelItems();
 
-  const returnPage = sessionStorage.getItem('portalReturnPage');
+  const returnPage = sessionStorage.getItem('portalReturnPage') || localStorage.getItem('portalActivePage');
   if (returnPage) {
     sessionStorage.removeItem('portalReturnPage');
-    if (returnPage !== 'directory' && typeof setPage === 'function') {
+    const adminOnlyPages = ['requests', 'domains', 'import'];
+    if (returnPage !== 'directory' && (!adminOnlyPages.includes(returnPage) || portalUserRole === 'admin') && typeof setPage === 'function') {
       setPage(returnPage);
     }
   }
@@ -1090,7 +1091,7 @@ function renderOrgDeptPanel(dept, isActive) {
       </div>
 
       ${deptSectors.length ? `<div class="org-sectors-wrap">${sectorsHtml}</div>` : ''}
-      ${renderOrgStaffList(deptDirectStaff, deptGradient, 'Birbaşa şöbə əməkdaşları')}
+      ${renderOrgStaffList(deptDirectStaff, deptGradient, 'Şöbə əməkdaşları')}
     </article>`;
 }
 
@@ -1385,6 +1386,7 @@ window.closeAdminNavDropdown = closeAdminNavDropdown;
 
 async function setPage(p) {
   currentPage = p;
+  localStorage.setItem('portalActivePage', p);
   document.getElementById('directoryPage').style.display = p === 'directory' ? '' : 'none';
   document.getElementById('departmentsPage').style.display = p === 'departments' ? '' : 'none';
   document.getElementById('meetingsPage').style.display = p === 'meetings' ? '' : 'none';
@@ -1908,6 +1910,8 @@ function showAppConfirm({ title = 'Təsdiq', message = '', okText = 'Bəli, Təs
 
     const okBtn = document.getElementById('appConfirmOkBtn');
     okBtn.textContent = okText;
+    const cancelBtn = document.getElementById('appConfirmCancelBtn');
+    if (cancelBtn) cancelBtn.textContent = cancelText;
 
     const iconWrap = document.getElementById('appConfirmIconWrap');
     const icon = document.getElementById('appConfirmIcon');
@@ -1922,6 +1926,11 @@ function showAppConfirm({ title = 'Təsdiq', message = '', okText = 'Bəli, Təs
       iconWrap.style.color = 'var(--success)';
       okBtn.style.background = 'var(--success)';
       icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />';
+    } else if (type === 'mail') {
+      iconWrap.style.background = 'rgba(37, 99, 235, 0.1)';
+      iconWrap.style.color = '#2563EB';
+      okBtn.style.background = '#2563EB';
+      icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />';
     } else {
       iconWrap.style.background = 'rgba(79, 70, 229, 0.1)';
       iconWrap.style.color = 'var(--accent)';
@@ -2200,13 +2209,14 @@ function renderUsersTable(users) {
       roleBadge = '<span class="dept-chip" style="margin:0;background:rgba(16,185,129,0.1);color:var(--success);">İstifadəçi</span>';
     }
 
-    const isMainAdmin = u.username.toLowerCase() === 'admin';
+    const isMainAdmin = (u.username || '').trim().toLowerCase() === 'admin';
+    const deptName = getUserDeptDisplay(u);
 
     return `<tr>
       <td><strong>${u.username}</strong></td>
-      <td>${u.email || '—'}</td>
+      <td>${deptName}</td>
       <td>${roleBadge}</td>
-      <td style="letter-spacing:2px;color:var(--text-muted)">••••••••</td>
+      <td><span style="letter-spacing:2px;color:var(--text-muted);">••••••••</span></td>
       <td style="text-align:right">
         <div style="display: inline-flex; gap: 4px; justify-content: flex-end;">
           <button class="act-btn" style="display:inline-flex" onclick="openDirectPassModal(${u.id}, '${u.username}')" title="Şifrəni Dəyiş">
@@ -2222,6 +2232,25 @@ function renderUsersTable(users) {
     </tr>`;
   }).join('');
 }
+
+function toggleUserPassVisibility(userId, btn) {
+  const el = document.getElementById(`userPassText-${userId}`);
+  if (!el) return;
+  const plainPass = btn ? (btn.dataset.pass || '') : '';
+  const isVisible = el.dataset.visible === 'true';
+  if (isVisible) {
+    el.textContent = '••••••••';
+    el.style.letterSpacing = '2px';
+    el.style.color = 'var(--text-muted)';
+    el.dataset.visible = 'false';
+  } else {
+    el.textContent = plainPass || 'Təyin edilməyib (yeniləyin)';
+    el.style.letterSpacing = 'normal';
+    el.style.color = plainPass ? 'var(--text)' : 'var(--text-muted)';
+    el.dataset.visible = 'true';
+  }
+}
+window.toggleUserPassVisibility = toggleUserPassVisibility;
 
 async function approveNewEmployeeRequest(reqId) {
   const ok = await showAppConfirm({
@@ -2349,11 +2378,33 @@ function openAddPortalUserModal() {
 
   document.getElementById('pUserEmpId').value = '';
   document.getElementById('pUsername').value = '';
-  document.getElementById('pUserEmail').value = '';
+  const emailEl = document.getElementById('pUserEmail'); if (emailEl) emailEl.value = '';
   document.getElementById('pUserPassword').value = '';
-  document.getElementById('pUserRole').value = 'meeting_admin';
+  const roleEl = document.getElementById('pUserRole'); if (roleEl) roleEl.value = 'meeting_admin';
 
   modal.classList.add('open');
+}
+
+function toAsciiUsername(name) {
+  const map = {
+    'ə': 'e', 'Ə': 'e',
+    'ğ': 'g', 'Ğ': 'g',
+    'ü': 'u', 'Ü': 'u',
+    'ö': 'o', 'Ö': 'o',
+    'ş': 's', 'Ş': 's',
+    'ç': 'c', 'Ç': 'c',
+    'ı': 'i', 'İ': 'i'
+  };
+  return (name || '')
+    .split('')
+    .map(ch => map[ch] || ch)
+    .join('')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
 }
 
 function onSelectPortalUserEmp() {
@@ -2364,7 +2415,7 @@ function onSelectPortalUserEmp() {
   if (emp) {
     const nameInput = document.getElementById('pUsername');
     const emailInput = document.getElementById('pUserEmail');
-    if (nameInput) nameInput.value = emp.name;
+    if (nameInput) nameInput.value = toAsciiUsername(emp.name);
     if (emailInput) emailInput.value = emp.email || '';
     if (!document.getElementById('pUserPassword').value) {
       generateRandomUserPass();
@@ -2385,7 +2436,7 @@ async function savePortalUser() {
   const username = (document.getElementById('pUsername').value || '').trim();
   const email = (document.getElementById('pUserEmail').value || '').trim();
   const password = (document.getElementById('pUserPassword').value || '').trim();
-  const role = document.getElementById('pUserRole').value || 'meeting_admin';
+  const role = document.getElementById('pUserRole')?.value || 'meeting_admin';
   const saveBtn = document.getElementById('btnSavePortalUser');
 
   if (!username) {
@@ -3270,6 +3321,80 @@ function goToCurrentMeetingMonth() {
   });
 }
 
+const MEETING_CONFIG = {
+  MAX_PILLS_PER_DAY: 2,
+  ADMIN_COLOR: { bg: '#F1F5F9', text: '#0F172A', border: '#CBD5E1' },
+  DEPT_COLOR_OVERRIDES: {
+    'coğrafi informasiya': { bg: '#EFF6FF', text: '#1D4ED8', border: '#BFDBFE' }
+  },
+  DEPT_PALETTE: [
+    { bg: '#ECFDF5', text: '#047857', border: '#A7F3D0' },
+    { bg: '#F5F3FF', text: '#6D28D9', border: '#DDD6FE' },
+    { bg: '#FFF7ED', text: '#C2410C', border: '#FED7AA' },
+    { bg: '#FDF2F8', text: '#BE185D', border: '#FBCFE8' },
+    { bg: '#ECFEFF', text: '#0E7490', border: '#A5F3FC' },
+    { bg: '#FEFCE8', text: '#A16207', border: '#FDE68A' },
+    { bg: '#F0FDF4', text: '#15803D', border: '#BBF7D0' },
+    { bg: '#FAF5FF', text: '#7E22CE', border: '#E9D5FF' },
+    { bg: '#FFF1F2', text: '#BE123C', border: '#FECDD3' },
+    { bg: '#F0FDFA', text: '#0F766E', border: '#99F6E4' },
+    { bg: '#EEF2FF', text: '#4338CA', border: '#C7D2FE' },
+    { bg: '#FEF2F2', text: '#B91C1C', border: '#FECACA' },
+    { bg: '#F7FEE7', text: '#4D7C0F', border: '#D9F99D' }
+  ],
+  MAIL_TEMPLATE: {
+    subjectPrefix: 'İclas Dəvəti',
+    greeting: 'Hörmətli həmkarlar,',
+    intro: 'Aşağıda təfərrüatları təqdim olunan iclasda iştirak etməyinizi xahiş edirik:',
+    closing: 'Hörmətlə,'
+  }
+};
+
+function getMeetingDateIso(m) {
+  return typeof m?.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
+}
+
+function formatMeetingDateDisplay(dateIso) {
+  return dateIso ? dateIso.split('-').reverse().join('.') : '—';
+}
+
+function formatMeetingTimeRange(m) {
+  const start = (m?.start_time || '').slice(0, 5);
+  const end = (m?.end_time || '').slice(0, 5);
+  return `${start}–${end}`;
+}
+
+function canManageMeeting(m) {
+  return (portalUserRole === 'admin' || portalUserRole === 'meeting_admin') && isMeetingOwner(m);
+}
+
+function getUserDeptDisplay(user) {
+  const key = (user?.username || '').trim().toLowerCase();
+  if (!key || user?.role === 'admin' || key === 'admin') return '—';
+  return DEPT_USERNAME_TO_NAME[key] || '—';
+}
+
+function getMeetingDeptColor(m) {
+  const key = m ? String(m.dept_name || m.organizer || '').trim() : '';
+  if (!key || key.toLowerCase() === 'admin') return MEETING_CONFIG.ADMIN_COLOR;
+
+  const normalized = key.toLocaleLowerCase('az');
+  for (const [pattern, color] of Object.entries(MEETING_CONFIG.DEPT_COLOR_OVERRIDES)) {
+    if (normalized.includes(pattern)) return color;
+  }
+
+  const depts = (typeof domains !== 'undefined' && Array.isArray(domains.departments)) ? domains.departments : [];
+  const deptIdx = depts.findIndex(d => d && d.name && d.name.trim().toLowerCase() === key.toLowerCase());
+  const palette = MEETING_CONFIG.DEPT_PALETTE;
+  if (deptIdx !== -1) return palette[deptIdx % palette.length];
+
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) {
+    h = ((h << 5) + h) + key.charCodeAt(i);
+  }
+  return palette[Math.abs(h) % palette.length];
+}
+
 function renderMeetingCalendar() {
   const grid = document.getElementById('meetingCalendarGrid');
   const title = document.getElementById('calendarMonthTitle');
@@ -3293,29 +3418,26 @@ function renderMeetingCalendar() {
 
   let html = '';
 
-    // Previous month trailing days
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-    for (let i = startDayOfWeek - 1; i >= 0; i--) {
-      const dayNum = prevMonthLastDay - i;
-      html += `<div class="calendar-day-cell other-month">${dayNum}</div>`;
-    }
+  // Previous month trailing days
+  const prevMonthLastDay = new Date(year, month, 0).getDate();
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const dayNum = prevMonthLastDay - i;
+    html += `<div class="calendar-day-cell other-month">${dayNum}</div>`;
+  }
 
-    // Current month days
-    for (let day = 1; day <= totalDays; day++) {
-      const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const dayMeetings = currentMonthMeetings.filter(m => {
-        const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-        return mDate === dStr;
-      });
+  // Current month days
+  for (let day = 1; day <= totalDays; day++) {
+    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayMeetings = currentMonthMeetings.filter(m => getMeetingDateIso(m) === dStr);
 
-      const isToday = dStr === todayStr;
-      const isSelected = dStr === selectedMeetingDateStr;
+    const isToday = dStr === todayStr;
+    const isSelected = dStr === selectedMeetingDateStr;
 
-      let cellClass = 'calendar-day-cell current-month';
-      if (isSelected) cellClass += ' selected';
-      if (isToday) cellClass += ' today';
+    let cellClass = 'calendar-day-cell current-month';
+    if (isSelected) cellClass += ' selected';
+    if (isToday) cellClass += ' today';
 
-      html += `
+    html += `
         <div onclick="selectMeetingDate('${dStr}')" class="${cellClass}">
           <div class="calendar-day-top">
             <span class="calendar-day-number">${day}</span>
@@ -3323,24 +3445,29 @@ function renderMeetingCalendar() {
             ${dayMeetings.length > 0 ? `<span class="calendar-mobile-dot" title="${dayMeetings.length} iclas"></span>` : ''}
           </div>
           <div class="calendar-events-preview">
-            ${dayMeetings.slice(0, 2).map(m => `
-              <div class="calendar-event-pill" title="${m.title} (${m.start_time.slice(0,5)} - ${m.end_time.slice(0,5)})">
-                ${m.start_time.slice(0,5)} ${m.title}
+            ${dayMeetings.slice(0, MEETING_CONFIG.MAX_PILLS_PER_DAY).map(m => {
+      const c = getMeetingDeptColor(m);
+      const timeRange = formatMeetingTimeRange(m);
+      const tip = `${m.title} (${timeRange})${m.dept_name ? ' · ' + m.dept_name : ''}`;
+      return `
+              <div class="calendar-event-pill" style="background: ${c.bg}; color: ${c.text}; border-left: 3px solid ${c.text};" title="${tip}">
+                ${timeRange} ${m.title}
               </div>
-            `).join('')}
-            ${dayMeetings.length > 2 ? `<div class="calendar-event-more">+${dayMeetings.length - 2} daha</div>` : ''}
+            `;
+    }).join('')}
+            ${dayMeetings.length > MEETING_CONFIG.MAX_PILLS_PER_DAY ? `<div class="calendar-event-more">+${dayMeetings.length - MEETING_CONFIG.MAX_PILLS_PER_DAY} daha</div>` : ''}
           </div>
         </div>
       `;
-    }
+  }
 
-    // Next month leading days to complete grid (multiples of 7)
-    const remainingCells = 7 - ((startDayOfWeek + totalDays) % 7);
-    if (remainingCells < 7) {
-      for (let day = 1; day <= remainingCells; day++) {
-        html += `<div class="calendar-day-cell other-month">${day}</div>`;
-      }
+  // Next month leading days to complete grid (multiples of 7)
+  const remainingCells = 7 - ((startDayOfWeek + totalDays) % 7);
+  if (remainingCells < 7) {
+    for (let day = 1; day <= remainingCells; day++) {
+      html += `<div class="calendar-day-cell other-month">${day}</div>`;
     }
+  }
 
   grid.innerHTML = html;
 }
@@ -3502,10 +3629,7 @@ function renderDayTimeline(dateStr) {
   const dObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
   title.textContent = `${dObj.getDate()} ${AZ_MONTHS[dObj.getMonth()]} ${dObj.getFullYear()}`;
 
-  const meetings = currentMonthMeetings.filter(m => {
-    const mDate = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
-    return mDate === dateStr;
-  }).sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const meetings = currentMonthMeetings.filter(m => getMeetingDateIso(m) === dateStr).sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   badge.textContent = `${meetings.length} İclas`;
 
@@ -3555,34 +3679,44 @@ function renderDayTimeline(dateStr) {
             </span>
             ${statusBadge}
           </div>
-          ${(portalUserRole === 'admin' || portalUserRole === 'meeting_admin') ? `
-            <div style="display: flex; gap: 4px; flex-shrink: 0;">
+          <div style="display: flex; gap: 4px; flex-shrink: 0;">
+            <button class="act-btn" title="Detallara bax" style="width: 26px; height: 26px;" onclick="openMeetingDetailModal(${m.id})">
+              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+            </button>
+            ${canManageMeeting(m) ? `
+              <button class="act-btn" title="E-poçt göndər" style="width: 26px; height: 26px;" onclick="sendMeetingEmail(${m.id})">
+                <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              </button>
               <button class="act-btn" title="Redaktə et" style="width: 26px; height: 26px;" onclick="openMeetingModal(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
               </button>
               <button class="act-btn red" title="Sil" style="width: 26px; height: 26px;" onclick="deleteMeeting(${m.id})">
                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
               </button>
-            </div>
-          ` : ''}
+            ` : ''}
+          </div>
         </div>
         <div style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px;">${m.title}</div>
         <div style="font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
           <div><strong>Təşkilatçı:</strong> ${m.organizer}</div>
-          ${m.dept_name ? `<div><strong>Şöbə:</strong> ${m.dept_name}</div>` : ''}
+          ${m.dept_name ? (() => {
+        const c = getMeetingDeptColor(m);
+        return `<div><strong>Şöbə:</strong> <span style="display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 6px; background: ${c.bg}; color: ${c.text}; border: 1px solid ${c.border};">${m.dept_name}</span></div>`;
+      })() : ''}
           ${participantsList.length > 0 ? `
             <div style="margin-top: 6px;">
               <strong style="display: block; margin-bottom: 4px; color: var(--text); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px;">İştirakçılar (${participantsList.length}):</strong>
               <div style="display: flex; flex-wrap: wrap; gap: 5px;">
-                ${participantsList.map(p => `
+                ${participantsList.slice(0, 3).map(p => `
                   <span style="font-size: 11px; background: #fff; border: 1px solid #CBD5E1; color: #334155; padding: 2px 7px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;">
-                    ${p.type === 'employee' 
-                      ? '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>' 
-                      : '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>'
-                    }
+                    ${p.type === 'employee'
+          ? '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>'
+          : '<svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#64748B"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>'
+        }
                     <span>${p.name || p.email}</span>
                   </span>
                 `).join('')}
+                ${participantsList.length > 3 ? `<span style="font-size: 11px; font-weight: 700; background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; padding: 2px 8px; border-radius: 6px; display: inline-flex; align-items: center;">+${participantsList.length - 3}</span>` : ''}
               </div>
             </div>
           ` : ''}
@@ -3669,6 +3803,7 @@ function updateWheelActiveClasses(colId, selectedVal) {
 }
 
 function openIosTimePicker(target) {
+  if (document.getElementById('meetingModal')?.classList.contains('meeting-modal-readonly')) return;
   activeIosTimeTarget = target;
   const inputId = target === 'start' ? 'mStartTime' : 'mEndTime';
   const input = document.getElementById(inputId);
@@ -3773,7 +3908,139 @@ function onStartTimeChange() {
 
 window.onStartTimeChange = onStartTimeChange;
 
-function openMeetingModal(meetingId = null, presetDate = null) {
+const DEPT_USERNAME_TO_NAME = {
+  gis_sobe: 'Coğrafi informasiya sistemləri və məlumatların idarə edilməsi şöbəsi',
+  kadastr_sobe: 'Daşınmaz əmlakın kadastrı və yerquruluşu şöbəsi',
+  qiymetlendirme_sobe: 'Daşınmaz əmlakın qiymətləndirilməsi şöbəsi',
+  azpos_sobe: 'Geodeziya istinad məntəqələri şəbəkəsinin idarə edilməsi şöbəsi',
+  huquq_sobe: 'Hüquq şöbəsi',
+  hr_sobe: 'İnsan resurslarının idarə edilməsi şöbəsi',
+  maliyye_sobe: 'Maliyyə və təminat şöbəsi',
+  senedler_sobe: 'Sənədlərlə iş şöbəsi',
+  statistika_sobe: 'Statistika və hesabatlılıq şöbəsi',
+  strateji_sobe: 'Strateji inkişaf və layihələrin idarə edilməsi şöbəsi',
+  geobotanikalab_sobe: 'Torpaq və geobotaniki tədqiqatlar laboratoriyası',
+  geobotanika_sobe: 'Torpaq və geobotaniki tədqiqatlar şöbəsi',
+  unvan_sobe: 'Ünvan reyestri şöbəsi',
+  xidmet_marketinq: 'Xidmətlərin təşkili və marketinq şöbəsi'
+};
+
+function getOrganizerDisplayName(username) {
+  const key = (username || '').trim().toLowerCase();
+  return DEPT_USERNAME_TO_NAME[key] || username || '';
+}
+
+function isMeetingOwner(m) {
+  if (portalUserRole === 'admin') return true;
+  if (portalUserRole !== 'meeting_admin' || !m) return false;
+  const org = (m.organizer || '').trim().toLowerCase();
+  const uName = (portalUserName || '').trim().toLowerCase();
+  const fullName = getOrganizerDisplayName(portalUserName).trim().toLowerCase();
+  return Boolean(org && (org === uName || org === fullName));
+}
+
+function isMeetingModalReadOnly() {
+  return Boolean(document.getElementById('meetingModal')?.classList.contains('meeting-modal-readonly'));
+}
+
+function setMeetingModalReadOnly(isReadOnly) {
+  const modal = document.getElementById('meetingModal');
+  if (!modal) return;
+  modal.classList.toggle('meeting-modal-readonly', isReadOnly);
+  modal.querySelectorAll('input, textarea, select, button:not(.modal-close):not([onclick*="closeModal"])').forEach(el => {
+    el.disabled = isReadOnly;
+  });
+  const saveBtn = modal.querySelector('button[onclick="saveMeeting()"]');
+  if (saveBtn) saveBtn.style.display = isReadOnly ? 'none' : '';
+}
+
+function openMeetingDetailModal(meetingId) {
+  const m = currentMonthMeetings.find(x => String(x.id) === String(meetingId));
+  const body = document.getElementById('meetingDetailBody');
+  const modal = document.getElementById('meetingDetailModal');
+  if (!m || !body || !modal) return;
+
+  const dateIso = typeof m.meeting_date === 'string' ? m.meeting_date.split('T')[0] : '';
+  const dateFormatted = dateIso ? dateIso.split('-').reverse().join('.') : '—';
+  const start = (m.start_time || '').slice(0, 5);
+  const end = (m.end_time || '').slice(0, 5);
+  const participants = Array.isArray(m.participants) ? m.participants : [];
+
+  const internalParticipants = participants.filter(p => p.type === 'employee');
+  const externalParticipants = participants.filter(p => p.type !== 'employee');
+
+  const internalHtml = internalParticipants.length > 0
+    ? internalParticipants.map(p => {
+      const name = p.name || p.email || 'İştirakçı';
+      const sub = [p.position, p.dept, p.email].filter(Boolean).join(' · ');
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2, #f8fafc);">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">${name}</div>
+            ${sub ? `<div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">${sub}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('')
+    : '<div style="font-size:13px;color:var(--text-muted);">İştirakçı əlavə edilməyib</div>';
+
+  const externalHtml = externalParticipants.length > 0
+    ? externalParticipants.map(p => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;">
+          <svg width="14" height="14" fill="none" stroke="#1d4ed8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          <span style="font-size:13px;font-weight:600;color:#1e3a8a;">${p.email || p.name || '—'}</span>
+        </div>`).join('')
+    : '';
+
+  body.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:4px;">İclasın Mövzusu</div>
+        <div style="font-size:17px;font-weight:700;color:var(--text);">${m.title || '—'}</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;">Tarix</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text);">${dateFormatted}</div>
+        </div>
+        <div style="padding:10px 12px;border-radius:10px;background:#eff6ff;border:1px solid #bfdbfe;">
+          <div style="font-size:11px;font-weight:600;color:#1d4ed8;margin-bottom:3px;">Saat</div>
+          <div style="font-size:14px;font-weight:700;color:#1d4ed8;">${start} – ${end}</div>
+        </div>
+      </div>
+
+      <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:3px;">Təşkilatçı</div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--text);">${m.organizer || '—'}</div>
+      </div>
+
+      ${m.description ? `
+      <div style="padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:4px;">Əlavə Qeydlər</div>
+        <div style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5;">${m.description}</div>
+      </div>` : ''}
+
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:8px;">İştirakçılar (${internalParticipants.length})</div>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;">
+          ${internalHtml}
+        </div>
+      </div>
+
+      ${externalParticipants.length > 0 ? `
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#1d4ed8;margin-bottom:8px;">Əlavə İştirakçılar (Email) (${externalParticipants.length})</div>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:160px;overflow-y:auto;">
+          ${externalHtml}
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+
+  modal.classList.add('open');
+}
+window.openMeetingDetailModal = openMeetingDetailModal;
+
+function openMeetingModal(meetingId = null, presetDate = null, readOnly = false) {
   const canManageMeetings = portalUserRole === 'admin' || portalUserRole === 'meeting_admin';
   if (!canManageMeetings) {
     showToast('İclas təyin etmək üçün səlahiyyətiniz yoxdur', 'error');
@@ -3801,7 +4068,9 @@ function openMeetingModal(meetingId = null, presetDate = null) {
   if (meetingId) {
     const m = currentMonthMeetings.find(x => String(x.id) === String(meetingId));
     if (!m) return;
-    document.getElementById('meetingModalTitle').textContent = 'İclası Redaktə Et';
+    const isOwnerOrAdmin = isMeetingOwner(m);
+    const effectiveReadOnly = readOnly || !isOwnerOrAdmin;
+    document.getElementById('meetingModalTitle').textContent = effectiveReadOnly ? 'İclas Məlumatları' : 'İclası Redaktə Et';
     document.getElementById('mTitle').value = m.title || '';
     document.getElementById('mOrganizer').value = m.organizer || '';
     populateMeetingDepts(m.dept_id || '');
@@ -3811,14 +4080,16 @@ function openMeetingModal(meetingId = null, presetDate = null) {
     document.getElementById('mEndTime').min = m.start_time.slice(0, 5);
     document.getElementById('mDescription').value = m.description || '';
     currentSelectedParticipants = Array.isArray(m.participants) ? [...m.participants] : [];
-    if (delBtn) delBtn.style.display = 'inline-flex';
+    if (delBtn) delBtn.style.display = effectiveReadOnly ? 'none' : 'inline-flex';
+    setMeetingModalReadOnly(effectiveReadOnly);
   } else {
     let initialDate = presetDate || selectedMeetingDateStr || todayStr;
     if (initialDate < todayStr) initialDate = todayStr;
 
+    setMeetingModalReadOnly(false);
     document.getElementById('meetingModalTitle').textContent = 'Yeni İclas Təyin Et';
     document.getElementById('mTitle').value = '';
-    document.getElementById('mOrganizer').value = portalUserName || '';
+    document.getElementById('mOrganizer').value = getOrganizerDisplayName(portalUserName);
     populateMeetingDepts('');
     document.getElementById('mDate').value = initialDate;
     document.getElementById('mStartTime').value = '10:00';
@@ -3830,6 +4101,7 @@ function openMeetingModal(meetingId = null, presetDate = null) {
   }
 
   renderParticipantChecklist();
+  if (typeof syncCustomDateDisplay === 'function') syncCustomDateDisplay();
   loadBusyMeetingsForDate(document.getElementById('mDate').value);
   document.getElementById('meetingModal').classList.add('open');
 }
@@ -3892,14 +4164,17 @@ async function saveMeeting() {
   const meetingId = document.getElementById('meetingEditId').value;
   const title = document.getElementById('mTitle').value.trim();
   const organizer = document.getElementById('mOrganizer').value.trim();
-  const dept_id = document.getElementById('mDept').value;
+  const matchedEmp = (typeof employees !== 'undefined' && Array.isArray(employees))
+    ? employees.find(e => (e.name || '').trim().toLowerCase() === organizer.toLowerCase())
+    : null;
+  const dept_id = (matchedEmp && matchedEmp.dept_id) ? matchedEmp.dept_id : (document.getElementById('mDept')?.value || null);
   const meeting_date = document.getElementById('mDate').value;
   const start_time = document.getElementById('mStartTime').value;
   const end_time = document.getElementById('mEndTime').value;
   const description = document.getElementById('mDescription').value.trim();
 
-  if (!title || !organizer || !dept_id || !meeting_date || !start_time || !end_time) {
-    showToast('Bütün məcburi sahələri (*), o cümlədən Aid Olduğu Şöbəni seçin!', 'error');
+  if (!title || !organizer || !meeting_date || !start_time || !end_time) {
+    showToast('Bütün məcburi sahələri (*) doldurun!', 'error');
     return;
   }
 
@@ -3961,6 +4236,30 @@ async function saveMeeting() {
     selectedMeetingDateStr = meeting_date;
     renderMeetingCalendar();
     renderDayTimeline(meeting_date);
+
+    if (!meetingId) {
+      const hasEmails = (currentSelectedParticipants || []).some(p => (p.email || '').trim());
+      if (hasEmails) {
+        const sendMail = await showAppConfirm({
+          title: 'E-poçt Göndər',
+          message: 'İştirakçılara e-poçt dəvəti göndərmək istəyirsinizmi?',
+          okText: 'Hə',
+          cancelText: 'Yox',
+          type: 'mail'
+        });
+        if (sendMail) {
+          openOutlookMeetingInvite({
+            title,
+            organizer,
+            meeting_date,
+            start_time,
+            end_time,
+            description,
+            participants: currentSelectedParticipants
+          });
+        }
+      }
+    }
   } catch (err) {
     showToast(err.message || 'Xəta baş verdi', 'error');
     console.error(err);
@@ -4003,7 +4302,7 @@ function deleteMeetingFromModal() {
   if (meetingId) deleteMeeting(meetingId);
 }
 
-  function formatTimeInput(input, target) {
+function formatTimeInput(input, target) {
   let digits = input.value.replace(/\D/g, '').slice(0, 4);
   if (digits.length >= 3) {
     input.value = digits.slice(0, 2) + ':' + digits.slice(2);
@@ -4041,11 +4340,11 @@ function validateTimeInput(input, target) {
 window.formatTimeInput = formatTimeInput;
 window.validateTimeInput = validateTimeInput;
 window.openIosTimePicker = openIosTimePicker;
-  window.closeIosTimePicker = closeIosTimePicker;
-  window.confirmIosTimePicker = confirmIosTimePicker;
-  window.scrollIosWheelTo = scrollIosWheelTo;
-  window.openMeetingModal = openMeetingModal;
-  window.saveMeeting = saveMeeting;
+window.closeIosTimePicker = closeIosTimePicker;
+window.confirmIosTimePicker = confirmIosTimePicker;
+window.scrollIosWheelTo = scrollIosWheelTo;
+window.openMeetingModal = openMeetingModal;
+window.saveMeeting = saveMeeting;
 window.deleteMeeting = deleteMeeting;
 window.deleteMeetingFromModal = deleteMeetingFromModal;
 window.changeMeetingMonth = changeMeetingMonth;
@@ -4057,3 +4356,237 @@ window.filterParticipantEmployeesList = filterParticipantEmployeesList;
 window.toggleEmployeeParticipant = toggleEmployeeParticipant;
 window.addExternalParticipant = addExternalParticipant;
 window.removeExternalParticipant = removeExternalParticipant;
+
+// Custom Date Picker for Meeting Modal
+let _cdpViewYear = new Date().getFullYear();
+let _cdpViewMonth = new Date().getMonth();
+
+const _cdpMonthNames = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'İyun',
+  'İyul', 'Avqust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'
+];
+
+function formatAzDate(isoStr) {
+  if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) return 'Tarix seçin...';
+  const [y, m, d] = isoStr.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function syncCustomDateDisplay() {
+  const hidden = document.getElementById('mDate');
+  const input = document.getElementById('mDateDisplayInput');
+  if (!hidden || !input) return;
+  const val = hidden.value;
+  input.value = val ? formatAzDate(val) : '';
+  if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y, m] = val.split('-').map(Number);
+    _cdpViewYear = y;
+    _cdpViewMonth = m - 1;
+  }
+}
+window.syncCustomDateDisplay = syncCustomDateDisplay;
+
+function parseAzDateToIso(str) {
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec((str || '').trim());
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > 2100) return null;
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function handleManualDateInput(input) {
+  const digits = input.value.replace(/\D/g, '').slice(0, 8);
+  let formatted = digits;
+  if (digits.length > 4) {
+    formatted = `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+  } else if (digits.length > 2) {
+    formatted = `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  }
+  input.value = formatted;
+
+  const iso = parseAzDateToIso(formatted);
+  if (iso) {
+    const hidden = document.getElementById('mDate');
+    if (hidden) hidden.value = iso;
+    const [y, m] = iso.split('-').map(Number);
+    _cdpViewYear = y;
+    _cdpViewMonth = m - 1;
+    const pop = document.getElementById('mDatePopover');
+    if (pop && pop.style.display === 'block') renderCustomDateCalendar();
+    if (typeof loadBusyMeetingsForDate === 'function') loadBusyMeetingsForDate(iso);
+  }
+}
+window.handleManualDateInput = handleManualDateInput;
+
+function commitManualDateInput(input) {
+  const iso = parseAzDateToIso(input.value);
+  if (!iso) {
+    syncCustomDateDisplay();
+  }
+}
+window.commitManualDateInput = commitManualDateInput;
+
+function changeCustomDateYear(delta, e) {
+  if (e) e.stopPropagation();
+  _cdpViewYear += delta;
+  renderCustomDateCalendar();
+}
+window.changeCustomDateYear = changeCustomDateYear;
+
+function toggleCustomDatePicker(e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById('mDatePopover');
+  if (!pop) return;
+  const isOpen = pop.style.display === 'block';
+  if (isOpen) {
+    pop.style.display = 'none';
+    return;
+  }
+  syncCustomDateDisplay();
+  renderCustomDateCalendar();
+  pop.style.display = 'block';
+}
+window.toggleCustomDatePicker = toggleCustomDatePicker;
+
+function changeCustomDateMonth(delta, e) {
+  if (e) e.stopPropagation();
+  _cdpViewMonth += delta;
+  if (_cdpViewMonth < 0) {
+    _cdpViewMonth = 11;
+    _cdpViewYear -= 1;
+  } else if (_cdpViewMonth > 11) {
+    _cdpViewMonth = 0;
+    _cdpViewYear += 1;
+  }
+  renderCustomDateCalendar();
+}
+window.changeCustomDateMonth = changeCustomDateMonth;
+
+function selectCustomDate(isoStr, e) {
+  if (e) e.stopPropagation();
+  const hidden = document.getElementById('mDate');
+  const pop = document.getElementById('mDatePopover');
+  if (hidden) {
+    hidden.value = isoStr;
+    syncCustomDateDisplay();
+    if (typeof loadBusyMeetingsForDate === 'function') {
+      loadBusyMeetingsForDate(isoStr);
+    }
+  }
+  if (pop) pop.style.display = 'none';
+}
+window.selectCustomDate = selectCustomDate;
+
+function renderCustomDateCalendar() {
+  const pop = document.getElementById('mDatePopover');
+  const hidden = document.getElementById('mDate');
+  if (!pop) return;
+
+  const selectedVal = hidden ? hidden.value : '';
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const firstDay = new Date(_cdpViewYear, _cdpViewMonth, 1);
+  // Monday = 0, Sunday = 6
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(_cdpViewYear, _cdpViewMonth + 1, 0).getDate();
+
+  let daysHtml = '';
+  for (let i = 0; i < startOffset; i++) {
+    daysHtml += '<div></div>';
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${_cdpViewYear}-${String(_cdpViewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const isPast = iso < todayStr;
+    const isToday = iso === todayStr;
+    const isSelected = iso === selectedVal;
+    const cls = ['cdp-day', isToday ? 'today' : '', isSelected ? 'selected' : '', isPast ? 'disabled' : ''].filter(Boolean).join(' ');
+    daysHtml += `<button type="button" class="${cls}" ${isPast ? 'disabled' : `onclick="selectCustomDate('${iso}', event)"`}>${d}</button>`;
+  }
+
+  pop.innerHTML = `
+    <div class="cdp-header">
+      <div class="cdp-nav-group">
+        <button type="button" class="cdp-nav-btn" onclick="changeCustomDateYear(-1, event)" title="Əvvəlki il" aria-label="Əvvəlki il">&laquo;</button>
+        <button type="button" class="cdp-nav-btn" onclick="changeCustomDateMonth(-1, event)" title="Əvvəlki ay" aria-label="Əvvəlki ay">&#8249;</button>
+      </div>
+      <div class="cdp-title">${_cdpMonthNames[_cdpViewMonth]} ${_cdpViewYear}</div>
+      <div class="cdp-nav-group">
+        <button type="button" class="cdp-nav-btn" onclick="changeCustomDateMonth(1, event)" title="Növbəti ay" aria-label="Növbəti ay">&#8250;</button>
+        <button type="button" class="cdp-nav-btn" onclick="changeCustomDateYear(1, event)" title="Növbəti il" aria-label="Növbəti il">&raquo;</button>
+      </div>
+    </div>
+    <div class="cdp-weekdays">
+      <span>B.e</span><span>Ç.a</span><span>Ç</span><span>C.a</span><span>C</span><span>Ş</span><span>B</span>
+    </div>
+    <div class="cdp-grid">${daysHtml}</div>
+    <div class="cdp-footer">
+      <button type="button" class="cdp-today-btn" onclick="selectCustomDate('${todayStr}', event)">Bu gün</button>
+    </div>
+  `;
+}
+
+document.addEventListener('click', (e) => {
+  const wrap = document.getElementById('mDateWrap');
+  const pop = document.getElementById('mDatePopover');
+  if (wrap && pop && pop.style.display === 'block' && !wrap.contains(e.target)) {
+    pop.style.display = 'none';
+  }
+});
+
+function openMailtoLink(mailtoUrl) {
+  const mailLink = document.createElement('a');
+  mailLink.href = mailtoUrl;
+  mailLink.style.display = 'none';
+  document.body.appendChild(mailLink);
+  mailLink.click();
+  mailLink.remove();
+}
+
+function openOutlookMeetingInvite({ title, organizer, meeting_date, start_time, end_time, description, participants, allowEmptyEmails = false }) {
+  const emails = (participants || []).map(p => (p.email || '').trim()).filter(Boolean);
+  if (emails.length === 0 && !allowEmptyEmails) return;
+
+  const tpl = MEETING_CONFIG.MAIL_TEMPLATE;
+  const dateFormatted = formatMeetingDateDisplay(meeting_date);
+  const subject = `${tpl.subjectPrefix}: ${title} (${dateFormatted} ${start_time})`;
+  const bodyLines = [
+    tpl.greeting,
+    '',
+    tpl.intro,
+    '',
+    `Mövzu: ${title}`,
+    `Təşkilatçı: ${organizer}`,
+    `Tarix: ${dateFormatted}`,
+    `Saat: ${start_time} – ${end_time}`
+  ];
+  if (description) bodyLines.push(`Qeydlər: ${description}`);
+  bodyLines.push('', tpl.closing, organizer);
+
+  const mailtoUrl = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyLines.join('\n'))}`;
+  openMailtoLink(mailtoUrl);
+}
+
+function sendMeetingEmail(id) {
+  const m = currentMonthMeetings.find(item => String(item.id) === String(id));
+  if (!m) return;
+  if (!canManageMeeting(m)) {
+    showToast('Yalnız iclası yaradan istifadəçi e-poçt göndərə bilər', 'error');
+    return;
+  }
+  openOutlookMeetingInvite({
+    title: m.title || '',
+    organizer: m.organizer || '',
+    meeting_date: getMeetingDateIso(m),
+    start_time: (m.start_time || '').slice(0, 5),
+    end_time: (m.end_time || '').slice(0, 5),
+    description: m.description || '',
+    participants: Array.isArray(m.participants) ? m.participants : [],
+    allowEmptyEmails: true
+  });
+}
+window.sendMeetingEmail = sendMeetingEmail;

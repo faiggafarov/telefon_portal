@@ -2,11 +2,11 @@
   "name": "portal-backend",
   "version": "1.0.0",
   "description": "PostgreSQL Backend for Portal",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "setup-db": "node setup_db.js"
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "setup-db": "node db/setup_db.js"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
